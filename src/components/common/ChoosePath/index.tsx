@@ -1,23 +1,25 @@
 import { useState, useRef, forwardRef, useImperativeHandle } from 'react'
+import { Linking } from 'react-native'
 // import { StyleSheet, View, Text, StatusBar, ScrollView } from 'react-native'
 
 // import { useGetter, useDispatch } from '@/store'
 import List, { type ListType } from './List'
 
 import ConfirmAlert, { type ConfirmAlertType } from '@/components/common/ConfirmAlert'
-import { toast, TEMP_FILE_PATH, checkStoragePermissions, requestStoragePermission, confirmDialog } from '@/utils/tools'
+import { toast, TEMP_FILE_PATH, confirmDialog } from '@/utils/tools'
 import { useI18n } from '@/lang'
 import { selectFile, unlink } from '@/utils/fs'
 import { useUnmounted } from '@/utils/hooks'
 import settingState from '@/store/setting/state'
 import { log } from '@/utils/log'
-import { updateSetting } from '@/core/common'
+import { checkStoragePermissions, requestStoragePermission, updateSetting } from '@/core/common'
 
 export interface ReadOptions {
   title: string
   isPersist?: boolean
   dirOnly?: boolean
   filter?: string[]
+  initialDir?: string
 }
 const initReadOptions = {}
 
@@ -42,8 +44,9 @@ export default forwardRef<ChoosePathType, ChoosePathProps>(({
   const handleOpenExternalStorage = async(options: ReadOptions) => {
     return checkStoragePermissions().then(isGranted => {
       readOptions.current = options
+      setDeny(false)
       if (isGranted) {
-        listRef.current?.show(options.title, '', options.dirOnly, options.filter)
+        listRef.current?.show(options.title, options.initialDir ?? '', options.dirOnly, options.filter)
       } else {
         confirmAlertRef.current?.setVisible(true)
       }
@@ -98,11 +101,17 @@ export default forwardRef<ChoosePathType, ChoosePathProps>(({
   }
   const handleTipsConfirm = () => {
     confirmAlertRef.current?.setVisible(false)
+    if (deny) {
+      void Linking.openSettings().catch(() => {
+        toast(t('storage_permission_tip_disagree'), 'long')
+      })
+      return
+    }
     void requestStoragePermission().then(result => {
       // console.log(result)
       setDeny(result == null)
       if (result) {
-        listRef.current?.show(readOptions.current.title, '', readOptions.current.dirOnly, readOptions.current.filter)
+        listRef.current?.show(readOptions.current.title, readOptions.current.initialDir ?? '', readOptions.current.dirOnly, readOptions.current.filter)
       } else {
         toast(t('storage_permission_tip_disagree'), 'long')
       }
@@ -122,9 +131,9 @@ export default forwardRef<ChoosePathType, ChoosePathProps>(({
         onConfirm={handleTipsConfirm}
         bgHide={false}
         closeBtn={false}
-        showConfirm={!deny}
+        showConfirm={true}
         cancelText={t('disagree')}
-        confirmText={t('agree')}
+        confirmText={deny ? '去设置' : t('agree')}
         text={t(deny ? 'storage_permission_tip_disagree_ask_again' : 'storage_permission_tip_request')} />
     </>
   )

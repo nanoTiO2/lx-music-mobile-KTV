@@ -66,6 +66,7 @@ const updateList = ({
   switch (id) {
     case LIST_IDS.DEFAULT:
     case LIST_IDS.LOVE:
+    case LIST_IDS.DOWNLOAD:
       break
     case LIST_IDS.TEMP:
     //   tempList.meta = meta ?? {}
@@ -129,7 +130,7 @@ export const listDataOverwrite = ({ defaultList, loveList, userList, tempList }:
     setMusicList(LIST_IDS.TEMP, tempList)
     updatedListIds.push(LIST_IDS.TEMP)
   }
-  const newIds = [LIST_IDS.DEFAULT, LIST_IDS.LOVE, ...userList.map(l => l.id)]
+  const newIds = [LIST_IDS.DEFAULT, LIST_IDS.LOVE, LIST_IDS.DOWNLOAD, ...userList.map(l => l.id)]
   if (tempList) newIds.push(LIST_IDS.TEMP)
   void overwriteListPosition(newIds)
   void overwriteListUpdateInfo(newIds)

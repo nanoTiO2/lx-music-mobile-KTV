@@ -142,6 +142,16 @@ declare global {
       'player.playbackRate': number
 
       /**
+       * 升降调半音数
+       */
+      'player.pitchSemitones': number
+
+      /**
+       * KTV分轨增益
+       */
+      'player.ktvVariantGain': number
+
+      /**
        * 缓存大小设置 unit MB
        */
       'player.cacheSize': string
@@ -225,6 +235,56 @@ declare global {
        * 播放详情页-是否允许通过歌词调整播放进度
        */
       'playDetail.isShowLyricProgressSetting': boolean
+
+      /**
+       * 舞台歌词显示模式
+       */
+      'lyricStage.mode': 'full' | 'threeLine' | 'teleprompter'
+
+      /**
+       * 舞台歌词镜像模式
+       */
+      'lyricStage.mirror': 'none' | 'horizontal' | 'vertical'
+
+      /**
+       * 舞台歌词字体缩放
+       */
+      'lyricStage.fontScale': number
+
+      /**
+       * 舞台歌词字体名
+       */
+      'lyricStage.fontFamily': string
+
+      /**
+       * 舞台歌词颜色主题
+       */
+      'lyricStage.colorTheme': 'emerald' | 'amber' | 'ice' | 'rose' | 'mono'
+
+      /**
+       * 舞台歌词行距缩放
+       */
+      'lyricStage.lineHeightScale': number
+
+      /**
+       * 舞台歌词投影模式
+       */
+      'lyricStage.isProjectorMode': boolean
+
+      /**
+       * 舞台歌词纯黑背景
+       */
+      'lyricStage.usePureBlackBackground': boolean
+
+      /**
+       * 舞台歌词低耗模式
+       */
+      'lyricStage.reduceMotion': boolean
+
+      /**
+       * 舞台歌词跑马灯配色
+       */
+      'lyricStage.marqueeMode': boolean
 
       /**
        * 是否启用桌面歌词
@@ -342,9 +402,29 @@ declare global {
       'list.addMusicLocationType': AddMusicLocationType
 
       /**
+       * 本地歌曲导入默认文件夹
+       */
+      'list.importMusicDir': string
+
+      /**
+       * 本地歌曲已导入文件夹列表
+       */
+      'list.importMusicDirs': string[]
+
+      /**
        * 文件命名方式
        */
       'download.fileName': '歌名 - 歌手' | '歌手 - 歌名' | '歌名'
+
+      /**
+       * 下载保存目录
+       */
+      'download.saveDir': string
+
+      /**
+       * 是否使用自定义下载目录
+       */
+      'download.useCustomDir': boolean
 
       /**
        * 是否启用同步
@@ -353,4 +433,3 @@ declare global {
     }
   }
 }
-

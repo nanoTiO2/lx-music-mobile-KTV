@@ -13,6 +13,7 @@ import Text from '@/components/common/Text'
 import { LIST_IDS } from '@/config/constant'
 import Loading from '@/components/common/Loading'
 import { useSettingValue } from '@/store/setting/hook'
+import commonState from '@/store/common/state'
 
 export interface ActiveListProps {
   onShowSearchBar: () => void
@@ -35,6 +36,10 @@ export default forwardRef<ActiveListType, ActiveListProps>(({ onShowSearchBar, o
         return global.i18n.t('list_name_default')
       case LIST_IDS.LOVE:
         return global.i18n.t('list_name_love')
+      case LIST_IDS.DOWNLOAD:
+        return global.i18n.t('list_name_download')
+      case LIST_IDS.LOCAL_MUSIC:
+        return global.i18n.t('list_name_local_music')
       default:
         return listState.allList.find(l => l.id === currentListId)?.name ?? ''
     }
@@ -53,6 +58,10 @@ export default forwardRef<ActiveListType, ActiveListProps>(({ onShowSearchBar, o
   }
 
   useEffect(() => {
+    if (commonState.navActiveId == 'nav_local') {
+      setActiveList(LIST_IDS.LOCAL_MUSIC)
+      return
+    }
     void getListPrevSelectId().then((id) => {
       setActiveList(id)
     })

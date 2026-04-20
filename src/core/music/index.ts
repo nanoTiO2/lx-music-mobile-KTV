@@ -45,17 +45,19 @@ export const getPicPath = async({
   musicInfo,
   isRefresh = false,
   listId,
+  allowOnlineFallback,
   onToggleSource,
 }: {
   musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   listId?: string | null
   isRefresh?: boolean
+  allowOnlineFallback?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
 }): Promise<string> => {
   if ('progress' in musicInfo) {
     return getDownloadPicUrl({ musicInfo, isRefresh, listId, onToggleSource })
   } else if (musicInfo.source == 'local') {
-    return getLocalPicUrl({ musicInfo, isRefresh, listId, onToggleSource })
+    return getLocalPicUrl({ musicInfo, isRefresh, listId, allowOnlineFallback, onToggleSource })
   } else {
     return getOnlinePicUrl({ musicInfo, isRefresh, listId, onToggleSource })
   }
@@ -64,16 +66,18 @@ export const getPicPath = async({
 export const getLyricInfo = async({
   musicInfo,
   isRefresh = false,
+  allowOnlineFallback,
   onToggleSource,
 }: {
   musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
   isRefresh?: boolean
+  allowOnlineFallback?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
 }): Promise<LX.Player.LyricInfo> => {
   if ('progress' in musicInfo) {
     return getDownloadLyricInfo({ musicInfo, isRefresh, onToggleSource })
   } else if (musicInfo.source == 'local') {
-    return getLocalLyricInfo({ musicInfo, isRefresh, onToggleSource })
+    return getLocalLyricInfo({ musicInfo, isRefresh, allowOnlineFallback, onToggleSource })
   } else {
     return getOnlineLyricInfo({ musicInfo, isRefresh, onToggleSource })
   }

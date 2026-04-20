@@ -1,4 +1,4 @@
-import { Platform, ToastAndroid, BackHandler, Linking, Dimensions, Alert, Appearance, PermissionsAndroid, AppState, StyleSheet, type ScaledSize } from 'react-native'
+import { Platform, ToastAndroid, BackHandler, Linking, Dimensions, Alert, Appearance, PermissionsAndroid, AppState, StyleSheet, type Permission, type ScaledSize } from 'react-native'
 // import ExtraDimensions from 'react-native-extra-dimensions-android'
 import Clipboard from '@react-native-clipboard/clipboard'
 import { storageDataPrefix } from '@/config/constant'
@@ -56,32 +56,38 @@ export const TEMP_FILE_PATH = temporaryDirectoryPath + '/tempFile'
 //   // return windowSize
 // }
 
-export const checkStoragePermissions = async() => PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE)
+const getStoragePermissions = (): Permission[] => {
+  const version = typeof Platform.Version == 'number' ? Platform.Version : parseInt(String(Platform.Version), 10) || 0
+  if (version >= 33 && PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO) {
+    return [PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO]
+  }
+  if (version >= 29) {
+    return [PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE]
+  }
+  return [
+    PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+    PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+  ]
+}
+
+export const checkStoragePermissions = async() => {
+  const permissions = getStoragePermissions()
+  if (!permissions.length) return true
+  const granted = await Promise.all(permissions.map(async permission => PermissionsAndroid.check(permission)))
+  return granted.some(Boolean)
+}
 
 export const requestStoragePermission = async() => {
   const isGranted = await checkStoragePermissions()
   if (isGranted) return isGranted
 
   try {
-    const granted = await PermissionsAndroid.requestMultiple(
-      [
-        PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-      ],
-      // {
-      //   title: '存储读写权限申请',
-      //   message:
-      //     '洛雪音乐助手需要使用存储读写权限才能下载歌曲.',
-      //   buttonNeutral: '一会再问我',
-      //   buttonNegative: '取消',
-      //   buttonPositive: '确定',
-      // },
-    )
+    const granted = await PermissionsAndroid.requestMultiple(getStoragePermissions())
     // console.log(granted)
     // console.log(Object.values(granted).every(r => r === PermissionsAndroid.RESULTS.GRANTED))
     // console.log(PermissionsAndroid.RESULTS)
     const granteds = Object.values(granted)
-    return granteds.every(r => r === PermissionsAndroid.RESULTS.GRANTED)
+    return granteds.some(r => r === PermissionsAndroid.RESULTS.GRANTED)
       ? true
       : granteds.includes(PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN)
         ? null

@@ -89,6 +89,7 @@ export default forwardRef<MetadataFormType, {}>((props, ref) => {
     matcheingPic.add(path)
     void getPicUrl({
       skipFilePic: true,
+      allowOnlineFallback: true,
       musicInfo: {
         id: path,
         interval: data.interval,
@@ -135,6 +136,7 @@ export default forwardRef<MetadataFormType, {}>((props, ref) => {
     matcheingLrc.add(path)
     void getLyricInfo({
       skipFileLyric: true,
+      allowOnlineFallback: true,
       musicInfo: {
         id: path,
         interval: data.interval,
@@ -233,5 +235,4 @@ const styles = createStyle({
     height: 60,
   },
 })
-
 

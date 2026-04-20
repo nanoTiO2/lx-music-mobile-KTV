@@ -6,12 +6,14 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.ActivityInfo;
 import android.graphics.Rect;
 import android.net.Uri;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.util.Log;
+import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 
@@ -381,5 +383,72 @@ public class UtilsModule extends ReactContextBaseJavaModule {
       }
     }).start();
   }
-}
 
+  @ReactMethod
+  public void setImmersiveMode(boolean enabled, Promise promise) {
+    Activity activity = reactContext.getCurrentActivity();
+    if (activity == null) {
+      promise.resolve(false);
+      return;
+    }
+    activity.runOnUiThread(() -> {
+      try {
+        Window window = activity.getWindow();
+        View decorView = window.getDecorView();
+        if (enabled) {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false);
+            if (window.getInsetsController() != null) {
+              window.getInsetsController().hide(android.view.WindowInsets.Type.statusBars() | android.view.WindowInsets.Type.navigationBars());
+              window.getInsetsController().setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+          } else {
+            decorView.setSystemUiVisibility(
+              View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            );
+          }
+        } else {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(true);
+            if (window.getInsetsController() != null) {
+              window.getInsetsController().show(android.view.WindowInsets.Type.statusBars() | android.view.WindowInsets.Type.navigationBars());
+            }
+          } else {
+            decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+          }
+        }
+        promise.resolve(true);
+      } catch (Exception e) {
+        promise.reject("IMMERSIVE_MODE_FAILED", e);
+      }
+    });
+  }
+
+  @ReactMethod
+  public void setScreenOrientation(String orientation, Promise promise) {
+    Activity activity = reactContext.getCurrentActivity();
+    if (activity == null) {
+      promise.resolve(false);
+      return;
+    }
+    activity.runOnUiThread(() -> {
+      try {
+        int target = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+        if ("portrait".equals(orientation)) {
+          target = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT;
+        } else if ("landscape".equals(orientation)) {
+          target = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;
+        }
+        activity.setRequestedOrientation(target);
+        promise.resolve(true);
+      } catch (Exception e) {
+        promise.reject("SCREEN_ORIENTATION_FAILED", e);
+      }
+    });
+  }
+}

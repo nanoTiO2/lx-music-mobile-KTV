@@ -1,4 +1,5 @@
 import { LIST_IDS } from '@/config/constant'
+import { createAndStartDownloadTask } from '@/core/download'
 import { addListMusics } from '@/core/list'
 import { playList, playNext } from '@/core/player/player'
 import { addTempPlayList } from '@/core/player/tempPlayList'
@@ -26,9 +27,17 @@ export const handlePlayLater = (musicInfo: LX.Music.MusicInfoOnline, selectedLis
   }
 }
 
-
 export const handleShare = (musicInfo: LX.Music.MusicInfoOnline) => {
   shareMusic(settingState.setting['common.shareType'], settingState.setting['download.fileName'], musicInfo)
+}
+
+export const handleDownload = async(musicInfo: LX.Music.MusicInfoOnline) => {
+  try {
+    await createAndStartDownloadTask(musicInfo, settingState.setting['player.playQuality'])
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : '\u4e0b\u8f7d\u5931\u8d25'
+    toast(message, 'long')
+  }
 }
 
 export const handleShowMusicSourceDetail = async(minfo: LX.Music.MusicInfoOnline) => {
@@ -36,7 +45,6 @@ export const handleShowMusicSourceDetail = async(minfo: LX.Music.MusicInfoOnline
   if (!url) return
   void openUrl(url)
 }
-
 
 export const handleDislikeMusic = async(musicInfo: LX.Music.MusicInfoOnline) => {
   const confirm = await confirmDialog({
@@ -52,4 +60,3 @@ export const handleDislikeMusic = async(musicInfo: LX.Music.MusicInfoOnline) => 
     void playNext(true)
   }
 }
-

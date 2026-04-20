@@ -99,3 +99,11 @@ export const requestIgnoreBatteryOptimization = async() => new Promise<boolean>(
     resolve(false)
   })
 })
+
+export const setImmersiveMode = async(enabled: boolean): Promise<void> => {
+  await UtilsModule.setImmersiveMode(enabled)
+}
+
+export const setScreenOrientation = async(orientation: 'portrait' | 'landscape' | 'auto'): Promise<void> => {
+  await UtilsModule.setScreenOrientation(orientation)
+}

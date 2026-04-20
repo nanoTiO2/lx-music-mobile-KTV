@@ -30,12 +30,12 @@ export default () => {
   const handleValueChange: SliderProps['onValueChange'] = value => {
     value = Math.trunc(value)
     setSliderSize(value)
-    void setPlaybackRate(parseFloat((value / 100).toFixed(2)))
   }
   const handleSlidingComplete: SliderProps['onSlidingComplete'] = value => {
     setSliding(false)
     value = Math.trunc(value)
     const rate = value / 100
+    void setPlaybackRate(parseFloat(rate.toFixed(2)))
     void setLyricPlaybackRate(rate)
     void updateMetaData(playerState.musicInfo, playerState.isPlay, playerState.lastLyric, true) // 更新通知栏的播放速率
     if (playbackRate == value) return
@@ -70,4 +70,3 @@ export default () => {
     </View>
   )
 }
-

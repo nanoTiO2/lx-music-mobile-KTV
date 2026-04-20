@@ -77,6 +77,8 @@ export default forwardRef<ListMenuType, ListMenuProps>(({
     switch (listInfo.id) {
       case LIST_IDS.DEFAULT:
       case LIST_IDS.LOVE:
+      case LIST_IDS.DOWNLOAD:
+      case LIST_IDS.LOCAL_MUSIC:
         break
       default:
         userList = listInfo as LX.List.UserListInfo

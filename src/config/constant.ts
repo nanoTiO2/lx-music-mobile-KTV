@@ -12,6 +12,7 @@ export const LIST_IDS = {
   LOVE: 'love',
   TEMP: 'temp',
   DOWNLOAD: 'download',
+  LOCAL_MUSIC: 'local_music',
   PLAY_LATER: null,
 } as const
 
@@ -57,6 +58,7 @@ export const storageDataPrefix = {
 
   openStoragePath: '@open_storage_path',
   selectedManagedFolder: '@selected_managed_folder',
+  downloadTaskList: '@download_task_list',
   notificationTipEnable: '@notification_tip_enable',
   ignoringBatteryOptimizationTipEnable: '@ignoring_battery_optimization_tip_enable',
 
@@ -103,7 +105,8 @@ export const NAV_MENUS = [
   { id: 'nav_songlist', icon: 'album' },
   { id: 'nav_top', icon: 'leaderboard' },
   { id: 'nav_love', icon: 'love' },
-  // { id: 'download', icon: 'download-2' },
+  { id: 'nav_download', icon: 'download-2' },
+  { id: 'nav_local', icon: 'add_folder' },
   { id: 'nav_setting', icon: 'setting' },
 ] as const
 

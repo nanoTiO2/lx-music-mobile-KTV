@@ -33,7 +33,13 @@ declare namespace LX {
 
     interface MusicInfoMeta_local extends MusicInfoMetaBase {
       filePath: string
+      originFilePath?: string
       ext: string
+      ktvInfo?: {
+        currentVariant: string
+        metadataFilePath: string
+        variants: Record<string, string[]>
+      }
     }
 
 

@@ -17,6 +17,20 @@ import { type PathItem } from './components/ListItem'
 const parentDirInfo = new Map<string, string>()
 const caches = new Map<string, PathItem[]>()
 
+const normalizePath = (path: string) => path.replace(/[\\/]+$/, '')
+
+const getFallbackParentPath = (path: string) => {
+  const normalizedPath = normalizePath(path)
+  if (!normalizedPath) return ''
+  if (normalizedPath.startsWith('content://')) {
+    const index = normalizedPath.lastIndexOf('/')
+    return index > 'content://'.length ? normalizedPath.slice(0, index) : ''
+  }
+  const slashIndex = Math.max(normalizedPath.lastIndexOf('/'), normalizedPath.lastIndexOf('\\'))
+  if (slashIndex < 1) return ''
+  return normalizedPath.slice(0, slashIndex)
+}
+
 const handleReadDir = async(path: string, dirOnly: boolean, filter?: string[], isRefresh = false) => {
   let filterRxp = filter?.length ? new RegExp(`\\.(${filter.join('|')})$`, 'i') : null
   const cacheKey = `${path}_${dirOnly ? 'true' : 'false'}_${filter ? filter.toString() : 'null'}`
@@ -107,8 +121,11 @@ export default forwardRef<ListType, ListProps>(({
       //   if (!uri) return
       //   void readDir(uri, dirOnly, filter)
       // })
-      if (dir) void readDir(dir, dirOnly, filter)
-      else void readDir(externalStorageDirectoryPath, dirOnly, filter)
+      if (dir) {
+        const parentPath = getFallbackParentPath(dir)
+        if (parentPath && parentPath != dir) parentDirInfo.set(dir, parentPath)
+        void readDir(dir, dirOnly, filter)
+      } else void readDir(externalStorageDirectoryPath, dirOnly, filter)
     },
     hide() {
       modalRef.current?.setVisible(false)
@@ -157,11 +174,11 @@ export default forwardRef<ListType, ListProps>(({
   }
 
   const toParentDir = () => {
-    const parentPath = parentDirInfo.get(path)
+    const parentPath = parentDirInfo.get(path) ?? getFallbackParentPath(path)
     if (parentPath) {
       void readDir(parentPath, readOptions.current.dirOnly, readOptions.current.filter)
     } else {
-      toast('Permission denied')
+      toast('已经是顶层目录')
     }
   }
 
@@ -193,4 +210,3 @@ const styles = createStyle({
     flex: 1,
   },
 })
-

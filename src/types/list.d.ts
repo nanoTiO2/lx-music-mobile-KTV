@@ -3,44 +3,43 @@ declare namespace LX {
     interface UserListInfo {
       id: string
       name: string
-      // list: LX.Music.MusicInfo[]
       source?: LX.OnlineSource
       sourceListId?: string
-      // position?: number
       locationUpdateTime: number | null
     }
 
     interface MyDefaultListInfo {
       id: 'default'
       name: '试听列表'
-      // list: LX.Music.MusicInfo[]
     }
 
     interface MyLoveListInfo {
       id: 'love'
       name: '我的收藏'
-      // list: LX.Music.MusicInfo[]
+    }
+
+    interface MyDownloadListInfo {
+      id: 'download'
+      name: '已下载'
     }
 
     interface MyTempListInfo {
       id: 'temp'
       name: '临时列表'
-      // list: LX.Music.MusicInfo[]
-      // TODO: save default lists info
       meta: {
         id?: string
       }
     }
 
-    type MyListInfo = MyDefaultListInfo | MyLoveListInfo | UserListInfo
+    type MyListInfo = MyDefaultListInfo | MyLoveListInfo | MyDownloadListInfo | UserListInfo
 
     interface MyAllList {
       defaultList: MyDefaultListInfo
       loveList: MyLoveListInfo
+      downloadList: MyDownloadListInfo
       userList: UserListInfo[]
       tempList: MyTempListInfo
     }
-
 
     type SearchHistoryList = string[]
     type ListPositionInfo = Record<string, number>
@@ -58,7 +57,6 @@ declare namespace LX {
       data: LX.Download.ListItem[]
     }
 
-
     type ListActionDataOverwrite = MakeOptional<LX.List.ListDataFull, 'tempList'>
     interface ListActionAdd {
       position: number
@@ -67,13 +65,7 @@ declare namespace LX {
     type ListActionRemove = string[]
     type ListActionUpdate = UserListInfo[]
     interface ListActionUpdatePosition {
-      /**
-       * 列表id
-       */
       ids: string[]
-      /**
-       * 位置
-       */
       position: number
     }
 
@@ -122,6 +114,9 @@ declare namespace LX {
       list: LX.Music.MusicInfo[]
     }
     interface MyLoveListInfoFull extends MyLoveListInfo {
+      list: LX.Music.MusicInfo[]
+    }
+    interface MyDownloadListInfoFull extends MyDownloadListInfo {
       list: LX.Music.MusicInfo[]
     }
     interface UserListInfoFull extends UserListInfo {

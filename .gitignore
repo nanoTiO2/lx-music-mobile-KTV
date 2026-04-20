@@ -66,3 +66,13 @@ buck-out/
 
 # testing
 /coverage
+
+# local codex / workspace artifacts
+/.codex_tmp/
+/logs/
+/docs/*.apk
+/codex_*_log.db
+/codex_*.db
+/index.android.bundle
+*.pyc
+**/__pycache__/

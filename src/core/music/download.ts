@@ -1,6 +1,4 @@
-// import { store } from '@/store'
-// import { getDownloadFilePath } from '@renderer/utils/music'
-
+import { existsFile } from '@/utils/fs'
 import {
   getMusicUrl as getOnlineMusicUrl,
   getPicUrl as getOnlinePicUrl,
@@ -8,16 +6,23 @@ import {
 } from './online'
 import { buildLyricInfo, getCachedLyricInfo } from './utils'
 
+const getLocalDownloadedPath = async(musicInfo: LX.Download.ListItem) => {
+  if (!musicInfo.isComplate) return null
+  const filePath = musicInfo.metadata.filePath
+  if (!filePath) return null
+  return await existsFile(filePath).then(exists => exists ? filePath : null).catch(() => null)
+}
+
 export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {} }: {
   musicInfo: LX.Download.ListItem
   isRefresh: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
   allowToggleSource?: boolean
 }): Promise<string> => {
-  // if (!isRefresh) {
-  //   const path = await getDownloadFilePath(musicInfo, appSetting['download.savePath'])
-  //   if (path) return path
-  // }
+  if (!isRefresh) {
+    const localPath = await getLocalDownloadedPath(musicInfo)
+    if (localPath) return localPath
+  }
 
   return getOnlineMusicUrl({ musicInfo: musicInfo.metadata.musicInfo, isRefresh, onToggleSource, allowToggleSource })
 }
@@ -29,19 +34,11 @@ export const getPicUrl = async({ musicInfo, isRefresh, listId, onToggleSource = 
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
 }): Promise<string> => {
   if (!isRefresh) {
-    // const path = await getDownloadFilePath(musicInfo, appSetting['download.savePath'])
-    // if (path) {
-    //   const pic = await global.lx.worker.main.getMusicFilePic(path)
-    //   if (pic) return pic
-    // }
-
     const onlineMusicInfo = musicInfo.metadata.musicInfo
     if (onlineMusicInfo.meta.picUrl) return onlineMusicInfo.meta.picUrl
   }
 
   return getOnlinePicUrl({ musicInfo: musicInfo.metadata.musicInfo, isRefresh, onToggleSource }).then((url) => {
-    // TODO: when listId required save url (update downloadInfo)
-
     return url
   })
 }
@@ -61,13 +58,6 @@ export const getLyricInfo = async({ musicInfo, isRefresh, onToggleSource = () =>
     isRefresh,
     onToggleSource,
   }).catch(async() => {
-    // 尝试读取文件内歌词
-    // const path = await getDownloadFilePath(musicInfo, appSetting['download.savePath'])
-    // if (path) {
-    //   const rawlrcInfo = await window.lx.worker.main.getMusicFileLyric(path)
-    //   if (rawlrcInfo) return buildLyricInfo(rawlrcInfo)
-    // }
-
     throw new Error('failed')
   })
 }

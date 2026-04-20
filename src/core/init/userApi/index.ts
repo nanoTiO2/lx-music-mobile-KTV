@@ -1,11 +1,36 @@
 import { type InitParams, onScriptAction, sendAction, type ResponseParams, type UpdateInfoParams, type RequestParams } from '@/utils/nativeModules/userApi'
 import { log, setUserApiList, setUserApiStatus } from '@/core/userApi'
+import { updateSetting } from '@/core/common'
 import settingState from '@/store/setting/state'
 import BackgroundTimer from 'react-native-background-timer'
 import { fetchData } from './request'
-import { getUserApiList } from '@/utils/data'
+import { addUserApi, getUserApiList } from '@/utils/data'
 import { confirmDialog, openUrl, tipDialog } from '@/utils/tools'
+import { getData, saveData } from '@/plugins/storage'
+import { DEFAULT_USER_API_NAME, getDefaultUserApiScript } from '@/config/defaultUserApiScript'
 
+const DEFAULT_USER_API_INIT_FLAG = '@default_user_api_init_v4'
+const ensureDefaultUserApi = async(setting: LX.AppSetting) => {
+  let userApiList = await getUserApiList()
+  let targetApi = userApiList.find(api => api.name == DEFAULT_USER_API_NAME)
+
+  if (!targetApi) {
+    targetApi = await addUserApi(getDefaultUserApiScript())
+    userApiList = await getUserApiList()
+    setUserApiList(userApiList)
+  }
+
+  const inited = await getData<boolean>(DEFAULT_USER_API_INIT_FLAG)
+  const currentSource = setting['common.apiSource']
+  const isCurrentUserApiExists = /^user_api/.test(currentSource) && userApiList.some(api => api.id == currentSource)
+
+  if (!inited || !currentSource || (/^user_api/.test(currentSource) && !isCurrentUserApiExists)) {
+    setting['common.apiSource'] = targetApi.id
+    updateSetting({ 'common.apiSource': targetApi.id })
+  }
+
+  if (!inited) await saveData(DEFAULT_USER_API_INIT_FLAG, true)
+}
 
 export default async(setting: LX.AppSetting) => {
   const userApiRequestMap = new Map<string, { resolve: (value: ResponseParams['result']) => void, reject: (error: Error) => void, timeout: number }>()
@@ -253,4 +278,5 @@ export default async(setting: LX.AppSetting) => {
   })
 
   setUserApiList(await getUserApiList())
+  await ensureDefaultUserApi(setting)
 }

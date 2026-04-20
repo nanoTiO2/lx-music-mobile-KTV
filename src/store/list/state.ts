@@ -5,11 +5,13 @@ export interface InitState {
   allMusicList: Map<string, LX.Music.MusicInfo[]>
   defaultList: LX.List.MyDefaultListInfo
   loveList: LX.List.MyLoveListInfo
+  downloadList: LX.List.MyDownloadListInfo
+  localMusicList: LX.List.UserListInfo
   tempList: LX.List.MyTempListInfo
   userList: LX.List.UserListInfo[]
   activeListId: string
 
-  allList: Array<LX.List.MyDefaultListInfo | LX.List.MyLoveListInfo | LX.List.UserListInfo>
+  allList: Array<LX.List.MyDefaultListInfo | LX.List.MyLoveListInfo | LX.List.MyDownloadListInfo | LX.List.UserListInfo>
 
   tempListMeta: {
     id: string
@@ -28,6 +30,15 @@ const state: InitState = {
     id: LIST_IDS.LOVE,
     name: '我的收藏',
   },
+  downloadList: {
+    id: LIST_IDS.DOWNLOAD,
+    name: '已下载',
+  },
+  localMusicList: {
+    id: LIST_IDS.LOCAL_MUSIC,
+    name: '本地音乐',
+    locationUpdateTime: null,
+  },
   tempList: {
     id: LIST_IDS.TEMP,
     name: '临时列表',
@@ -42,7 +53,7 @@ const state: InitState = {
   fetchingListStatus: {},
 }
 
-state.allList = [state.defaultList, state.loveList]
+state.allList = [state.defaultList, state.loveList, state.downloadList]
 
 
 export default state

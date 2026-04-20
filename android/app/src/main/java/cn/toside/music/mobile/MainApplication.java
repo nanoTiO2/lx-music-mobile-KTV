@@ -1,7 +1,6 @@
 package cn.toside.music.mobile;
 
 import com.facebook.react.PackageList;
-import com.facebook.react.flipper.ReactNativeFlipper;
 import com.reactnativenavigation.NavigationApplication;
 import com.facebook.react.ReactNativeHost;
 import com.facebook.react.ReactPackage;
@@ -12,6 +11,7 @@ import java.util.List;
 import cn.toside.music.mobile.cache.CachePackage;
 import cn.toside.music.mobile.crypto.CryptoPackage;
 import cn.toside.music.mobile.lyric.LyricPackage;
+import cn.toside.music.mobile.mixer.MixerPackage;
 import cn.toside.music.mobile.userApi.UserApiPackage;
 import cn.toside.music.mobile.utils.UtilsPackage;
 
@@ -21,7 +21,7 @@ public class MainApplication extends NavigationApplication {
       new NavigationReactNativeHost(this) {
         @Override
         public boolean getUseDeveloperSupport() {
-          return BuildConfig.DEBUG;
+          return false;
         }
 
         @Override
@@ -32,6 +32,7 @@ public class MainApplication extends NavigationApplication {
           // packages.add(new MyReactNativePackage());
           packages.add(new CachePackage());
           packages.add(new LyricPackage());
+          packages.add(new MixerPackage());
           packages.add(new UtilsPackage());
           packages.add(new CryptoPackage());
           packages.add(new UserApiPackage());
@@ -67,6 +68,5 @@ public class MainApplication extends NavigationApplication {
       // If you opted-in for the New Architecture, we load the native entry point for this app.
       DefaultNewArchitectureEntryPoint.load();
     }
-    ReactNativeFlipper.initializeFlipper(this, getReactNativeHost().getReactInstanceManager());
   }
 }

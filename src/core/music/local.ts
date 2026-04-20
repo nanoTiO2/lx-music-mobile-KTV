@@ -12,7 +12,7 @@ import {
   getOnlineOtherSourcePicUrl,
   getOtherSource,
 } from './utils'
-import { getLocalFilePath } from '@/utils/music'
+import { getLocalFilePath, getLocalMetaFilePath } from '@/utils/music'
 import { readLyric, readPic } from '@/utils/localMediaMetadata'
 import { stat } from '@/utils/fs'
 
@@ -35,7 +35,11 @@ const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handl
     }, true)
     if (result.length) try { return await handler(result) } catch {}
   }
-  let fileName = (await stat(musicInfo.meta.filePath).catch(() => ({ name: null }))).name ?? musicInfo.meta.filePath.split(/\/|\\/).at(-1)
+  const metadataFilePath = getLocalMetaFilePath(musicInfo)
+  const metadataFileName = metadataFilePath ? metadataFilePath.split(/\/|\\/).pop() : null
+  let fileName = metadataFilePath
+    ? (await stat(metadataFilePath).catch(() => ({ name: null }))).name ?? metadataFileName
+    : null
   if (fileName) {
     fileName = fileName.substring(0, fileName.lastIndexOf('.'))
     if (fileName != musicInfo.name) {
@@ -99,15 +103,18 @@ export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = tru
   })
 }
 
-export const getPicUrl = async({ musicInfo, listId, isRefresh, skipFilePic, onToggleSource = () => {} }: {
+export const getPicUrl = async({ musicInfo, listId, isRefresh, skipFilePic, allowOnlineFallback = false, onToggleSource = () => {} }: {
   musicInfo: LX.Music.MusicInfoLocal
   listId?: string | null
   isRefresh: boolean
   skipFilePic?: boolean
+  allowOnlineFallback?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
 }): Promise<string> => {
+  const metadataFilePath = getLocalMetaFilePath(musicInfo)
+
   if (!isRefresh && !skipFilePic) {
-    let pic = await readPic(musicInfo.meta.filePath).catch(() => null)
+    let pic = metadataFilePath ? await readPic(metadataFilePath).catch(() => null) : null
     if (pic) {
       if (pic.startsWith('/')) pic = `file://${pic}`
       return pic
@@ -115,6 +122,8 @@ export const getPicUrl = async({ musicInfo, listId, isRefresh, skipFilePic, onTo
 
     if (musicInfo.meta.picUrl) return musicInfo.meta.picUrl
   }
+
+  if (!allowOnlineFallback) return ''
 
   try {
     return await getOnlineOtherSourcePicByLocal(musicInfo).then(({ url }) => {
@@ -161,6 +170,8 @@ export const parseLyric = (lrc: string): LX.Music.LyricInfo => {
     },
   } as const
   const tagRxp = /(?:^|\n\s*)\[awlrc:([^\]]+)]/i
+  const profileTagRxp = /(?:^|\n\s*)\[lx_music_profile:([^\]]+)]/ig
+  const profileHeaderRxp = /(?:^|\n\s*)\[(key|bpm|beat|analysis_time):([^\]]+)]/ig
   const lrcRxp = /^(lrc|awlrc|tlrc|rlrc):([^,]+)$/i
   const parse = (content: string) => {
     const lyricInfo: Partial<LX.Music.LyricInfo> = {}
@@ -179,7 +190,7 @@ export const parseLyric = (lrc: string): LX.Music.LyricInfo => {
   let lyric = lrc.replace(tagRxp, (_: string, p1: string) => {
     parsedInfo = parse(p1)
     return ''
-  }).trim()
+  }).replace(profileTagRxp, '').replace(profileHeaderRxp, '').trim()
   return { lyric, ...parsedInfo }
 }
 
@@ -188,12 +199,15 @@ const getMusicFileLyric = async(filePath: string) => {
   if (!lyric) return null
   return parseLyric(lyric)
 }
-export const getLyricInfo = async({ musicInfo, isRefresh, skipFileLyric, onToggleSource = () => {} }: {
+export const getLyricInfo = async({ musicInfo, isRefresh, skipFileLyric, allowOnlineFallback = false, onToggleSource = () => {} }: {
   musicInfo: LX.Music.MusicInfoLocal
   skipFileLyric?: boolean
   isRefresh: boolean
+  allowOnlineFallback?: boolean
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
 }): Promise<LX.Player.LyricInfo> => {
+  const metadataFilePath = getLocalMetaFilePath(musicInfo)
+
   if (!isRefresh && !skipFileLyric) {
     // const lyricInfo = await getCachedLyricInfo(musicInfo)
     // if (lyricInfo?.rawlrcInfo.lyric && lyricInfo.lyric != lyricInfo.rawlrcInfo.lyric) {
@@ -202,12 +216,14 @@ export const getLyricInfo = async({ musicInfo, isRefresh, skipFileLyric, onToggl
     // }
 
     // 尝试读取文件内歌词
-    const rawlrcInfo = await getMusicFileLyric(musicInfo.meta.filePath)
+    const rawlrcInfo = metadataFilePath ? await getMusicFileLyric(metadataFilePath) : null
     if (rawlrcInfo) return buildLyricInfo(rawlrcInfo)
 
     const lyricInfo = await getCachedLyricInfo(musicInfo)
     if (lyricInfo?.lyric) return buildLyricInfo(lyricInfo)
   }
+
+  if (!allowOnlineFallback) return buildLyricInfo({ lyric: '', tlyric: '', rlyric: '', lxlyric: '' })
 
   try {
     // eslint-disable-next-line @typescript-eslint/promise-function-async

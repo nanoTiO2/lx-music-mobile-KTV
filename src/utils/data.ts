@@ -29,6 +29,7 @@ const dislikeListPrefix = storageDataPrefix.dislikeList
 const userApiPrefix = storageDataPrefix.userApi
 const openStoragePathPrefix = storageDataPrefix.openStoragePath
 const selectedManagedFolderPrefix = storageDataPrefix.selectedManagedFolder
+const downloadTaskListPrefix = storageDataPrefix.downloadTaskList
 
 // const defaultListKey = listPrefix + 'default'
 // const loveListKey = listPrefix + 'love'
@@ -440,6 +441,14 @@ export const getSelectedManagedFolder = async() => {
   let uri = await getData<string>(selectedManagedFolderPrefix)
   if (selectedManagedFolder != uri) selectedManagedFolder = uri
   return selectedManagedFolder
+}
+
+export const getDownloadTasks = async(): Promise<LX.Download.ListItem[]> => {
+  return (await getData<LX.Download.ListItem[]>(downloadTaskListPrefix)) ?? []
+}
+
+export const saveDownloadTasks = async(tasks: LX.Download.ListItem[]) => {
+  await saveData(downloadTaskListPrefix, tasks)
 }
 
 export const getSyncAuthKey = async(serverId: string) => {

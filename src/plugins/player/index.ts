@@ -1,5 +1,6 @@
 import TrackPlayer from 'react-native-track-player'
-import { updateOptions, setVolume, setPlaybackRate, migratePlayerCache } from './utils'
+import { updateOptions, setVolume, setPlaybackRate, setPitch, setKtvVariantGain, migratePlayerCache, startResourceTransition } from './utils'
+import settingState from '@/store/setting/state'
 
 // const listenEvent = () => {
 //   TrackPlayer.addEventListener('playback-error', err => {
@@ -40,6 +41,7 @@ const initial = async({ volume, playRate, cacheSize, isHandleAudioFocus, isEnabl
   await updateOptions()
   await setVolume(volume)
   await setPlaybackRate(playRate)
+  await setPitch(settingState.setting['player.pitchSemitones'])
   // listenEvent()
 }
 
@@ -52,10 +54,13 @@ export {
   isInitialized,
   setVolume,
   setPlaybackRate,
+  setPitch,
+  setKtvVariantGain,
 }
 
 export {
   setResource,
+  startResourceTransition,
   setPause,
   setPlay,
   setCurrentTime,

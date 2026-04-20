@@ -23,13 +23,17 @@ export default () => {
   // const updateMusicInfo = useCommit('list', 'updateMusicInfo')
 
   let updateTimeout: number | null = null
+  let seekVersion = 0
+  let nextDurationRefreshAt = 0
 
   let isScreenOn = true
 
   const getCurrentTime = () => {
     let id = playerState.musicInfo.id
+    const currentSeekVersion = seekVersion
     void getPosition().then(position => {
-      if (!position || id != playerState.musicInfo.id) return
+      if (currentSeekVersion != seekVersion) return
+      if (position == null || Number.isNaN(position) || id != playerState.musicInfo.id) return
       setNowPlayTime(position)
       if (!playerState.isPlay) return
 
@@ -39,7 +43,11 @@ export default () => {
     })
   }
   const getMaxTime = async() => {
-    setMaxplayTime(await getDuration())
+    if (Date.now() < nextDurationRefreshAt && playerState.progress.maxPlayTime > 0) return
+    const duration = await getDuration()
+    if (duration <= 0 || Number.isNaN(duration)) return
+    nextDurationRefreshAt = Date.now() + 8000
+    setMaxplayTime(duration)
 
     if (playerState.playMusicInfo.musicInfo && 'source' in playerState.playMusicInfo.musicInfo && !playerState.playMusicInfo.musicInfo.interval) {
       // console.log(formatPlayTime2(playProgress.maxPlayTime))
@@ -64,7 +72,10 @@ export default () => {
   const startUpdateTimeout = () => {
     if (!isScreenOn) return
     clearUpdateTimeout()
+    if (playerState.progress.maxPlayTime <= 0) nextDurationRefreshAt = 0
+    void getMaxTime()
     updateTimeout = BackgroundTimer.setInterval(() => {
+      if (playerState.progress.maxPlayTime <= 0 || Date.now() >= nextDurationRefreshAt) void getMaxTime()
       getCurrentTime()
     }, 1000 / settingState.setting['player.playbackRate'])
     getCurrentTime()
@@ -72,9 +83,22 @@ export default () => {
 
   const setProgress = (time: number, maxTime?: number) => {
     if (!playerState.musicInfo.id) return
-    // console.log('setProgress', time, maxTime)
-    setNowPlayTime(time)
-    void setCurrentTime(time)
+    seekVersion += 1
+    const resolvedMaxTime = maxTime ?? (playerState.progress.maxPlayTime || time)
+    const targetTime = Math.max(0, Math.min(time, resolvedMaxTime))
+    setNowPlayTime(targetTime)
+    nextDurationRefreshAt = 0
+    clearUpdateTimeout()
+    void setCurrentTime(targetTime).then(() => {
+      const currentSeekVersion = seekVersion
+      void getPosition().then(position => {
+        if (currentSeekVersion != seekVersion) return
+        if (position == null || Number.isNaN(position) || !playerState.musicInfo.id) return
+        setNowPlayTime(position)
+      })
+      void getMaxTime()
+      if (playerState.isPlay) startUpdateTimeout()
+    }).catch(() => {})
 
     if (maxTime != null) setMaxplayTime(maxTime)
 

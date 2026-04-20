@@ -13,7 +13,7 @@ import commonState from '@/store/common/state'
 import CommentBtn from './CommentBtn'
 import Btn from './Btn'
 import SettingPopup, { type SettingPopupType } from '../../components/SettingPopup'
-import DesktopLyricBtn from './DesktopLyricBtn'
+import KeyInfoBtn from '../../components/KeyInfoBtn'
 
 export const HEADER_HEIGHT = scaleSizeH(_HEADER_HEIGHT)
 
@@ -47,7 +47,7 @@ export default memo(() => {
           <Icon name="chevron-left" size={18} />
         </TouchableOpacity>
         <Title />
-        <DesktopLyricBtn />
+        <KeyInfoBtn direction="horizontal" />
         <CommentBtn />
         <Btn icon="slider" onPress={showSetting} />
       </View>

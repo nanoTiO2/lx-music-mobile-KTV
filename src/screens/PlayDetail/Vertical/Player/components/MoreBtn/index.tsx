@@ -2,13 +2,19 @@ import { createStyle } from '@/utils/tools'
 import { View } from 'react-native'
 import PlayModeBtn from './PlayModeBtn'
 import MusicAddBtn from './MusicAddBtn'
-import DesktopLyricBtn from './DesktopLyricBtn'
+import DownloadBtn from './DownloadBtn'
 import CommentBtn from './CommentBtn'
+import KtvBtn from '@/screens/PlayDetail/components/KtvBtn'
+import LyricStageBtn from '@/screens/PlayDetail/components/LyricStageBtn'
+import KeyInfoBtn from '@/screens/PlayDetail/components/KeyInfoBtn'
 
 export default () => {
   return (
     <View style={styles.container}>
-      <DesktopLyricBtn />
+      <KeyInfoBtn direction="vertical" />
+      <LyricStageBtn direction="vertical" />
+      <KtvBtn direction="vertical" />
+      <DownloadBtn />
       <MusicAddBtn />
       <PlayModeBtn />
       <CommentBtn />

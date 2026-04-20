@@ -1,4 +1,4 @@
-import { addListMusics, getListMusics, removeListMusics, removeUserList, setFetchingListStatus, updateListMusics } from '@/core/list'
+import { addListMusics, getListMusics, overwriteListMusics, removeListMusics, removeUserList, setFetchingListStatus, updateListMusics } from '@/core/list'
 import { confirmDialog, handleReadFile, handleSaveFile, showImportTip, toast } from '@/utils/tools'
 import syncSourceList from '@/core/syncSourceList'
 import { log } from '@/utils/log'
@@ -125,10 +125,24 @@ export const buildLocalMusicInfo = (filePath: string, metadata: MusicMetadataFul
     },
   }
 }
-const createLocalMusicInfos = async(filePaths: string[], errorPath: string[]): Promise<LX.Music.MusicInfoLocal[]> => {
+const createLocalMusicCache = (musicInfos: LX.Music.MusicInfo[]) => {
+  const cache = new Map<string, LX.Music.MusicInfoLocal>()
+  for (const musicInfo of musicInfos) {
+    if (musicInfo.source != 'local' || !musicInfo.meta.filePath) continue
+    cache.set(musicInfo.meta.filePath, musicInfo)
+  }
+  return cache
+}
+const createInitialLocalMusicInfos = (files: FileType[], cache: Map<string, LX.Music.MusicInfoLocal>) => {
+  return files.map(file => cache.get(file.path) ?? buildLocalMusicInfoByFilePath(file))
+}
+const createLocalMusicInfos = async(filePaths: string[], errorPath: string[], cache: Map<string, LX.Music.MusicInfoLocal>): Promise<LX.Music.MusicInfoLocal[]> => {
   const list: LX.Music.MusicInfoLocal[] = []
   filePaths = [...filePaths]
   while (filePaths.length) {
+    while (filePaths.length && cache.has(filePaths[0])) {
+      list.push(cache.get(filePaths.shift()!)!)
+    }
     const tasks = [
       filePaths.shift(),
       filePaths.shift(),
@@ -171,20 +185,23 @@ const createThrottleAddMusics = (add: (listId: string, musicInfos: LX.Music.Musi
 }
 
 const handleUpdateMusics = async(filePaths: string[],
-  throttleUpdateMusics: (musicInfos: LX.Music.MusicInfoLocal[], errorPath?: string[]) => void, index: number = -1, total: number = 0, errorPath: string[] = []) => {
+  throttleUpdateMusics: (musicInfos: LX.Music.MusicInfoLocal[], errorPath?: string[]) => void, cache: Map<string, LX.Music.MusicInfoLocal>, index: number = -1, total: number = 0, errorPath: string[] = []) => {
   // console.log(index + 1, index + 201)
   if (!total) total = filePaths.length
   const paths = filePaths.slice(index + 1, index + 11)
-  const musicInfos = await createLocalMusicInfos(paths, errorPath)
+  const musicInfos = await createLocalMusicInfos(paths, errorPath, cache)
   if (musicInfos.length) throttleUpdateMusics(musicInfos)
   index += 10
-  if (filePaths.length - 1 > index) await handleUpdateMusics(filePaths, throttleUpdateMusics, index, total, errorPath)
+  if (filePaths.length - 1 > index) await handleUpdateMusics(filePaths, throttleUpdateMusics, cache, index, total, errorPath)
   else {
     if (errorPath.length) {
-      log.warn('Parse metadata failed:\n' + errorPath.map(p => p.split('/').at(-1)).join('\n'))
-      toast(global.i18n.t('list_select_local_file_result_failed_tip', { total, success: total - errorPath.length, failed: errorPath.length }), 'long')
+      log.warn('Parse metadata failed:\n' + errorPath.map(p => {
+        const parts = p.split('/')
+        return parts[parts.length - 1]
+      }).join('\n'))
+      toast(global.i18n.t('list_select_local_file_result_failed_tip', { total, success: total - errorPath.length, failed: errorPath.length }))
     } else {
-      toast(global.i18n.t('list_select_local_file_result_tip', { total }), 'long')
+      toast(global.i18n.t('list_select_local_file_result_tip', { total }))
     }
     throttleUpdateMusics([], errorPath)
   }
@@ -193,14 +210,52 @@ export const handleImportMediaFile = async(listInfo: LX.List.MyListInfo, path: s
   setFetchingListStatus(listInfo.id, true)
   const files = await scanAudioFiles(path)
   if (files.length) {
+    const cache = createLocalMusicCache(await getListMusics(listInfo.id))
+    const pendingPaths = files.map(file => file.path).filter(filePath => !cache.has(filePath))
     const throttleUpdateMusics = createThrottleAddMusics(async(listId, musicInfos) => {
       return updateListMusics(musicInfos.map(info => ({ id: listId, musicInfo: info })))
     }, async(listId, errorPath) => {
       return removeListMusics(listId, errorPath)
     }, listInfo.id)
-    await addListMusics(listInfo.id, files.map(buildLocalMusicInfoByFilePath), settingState.setting['list.addMusicLocationType'])
-    toast(global.i18n.t('list_select_local_file_temp_add_tip', { total: files.length }), 'long')
-    await handleUpdateMusics(files.map(f => f.path), throttleUpdateMusics)
-  } else toast(global.i18n.t('list_select_local_file_empty_tip'), 'long')
+    await addListMusics(listInfo.id, createInitialLocalMusicInfos(files, cache), settingState.setting['list.addMusicLocationType'])
+    if (pendingPaths.length) {
+      toast(global.i18n.t('list_select_local_file_temp_add_tip', { total: pendingPaths.length }))
+      await handleUpdateMusics(files.map(f => f.path), throttleUpdateMusics, cache)
+    } else {
+      toast(global.i18n.t('list_select_local_file_result_tip', { total: files.length }))
+    }
+  } else toast(global.i18n.t('list_select_local_file_empty_tip'))
   setFetchingListStatus(listInfo.id, false)
+}
+
+export const handleImportMediaFolderRecursive = async(listInfo: LX.List.MyListInfo, path: string) => {
+  setFetchingListStatus(listInfo.id, true)
+  try {
+    const files: FileType[] = await scanAudioFiles(path, true)
+    await handleImportMediaFiles(listInfo, files)
+  } finally {
+    setFetchingListStatus(listInfo.id, false)
+  }
+}
+
+export const handleImportMediaFiles = async(listInfo: LX.List.MyListInfo, files: FileType[]) => {
+  if (files.length) {
+    const cache = createLocalMusicCache(await getListMusics(listInfo.id))
+    const pendingPaths = files.map(file => file.path).filter(filePath => !cache.has(filePath))
+    const throttleUpdateMusics = createThrottleAddMusics(async(listId, musicInfos) => {
+      return updateListMusics(musicInfos.map(info => ({ id: listId, musicInfo: info })))
+    }, async(listId, errorPath) => {
+      return removeListMusics(listId, errorPath)
+    }, listInfo.id)
+    await overwriteListMusics(listInfo.id, createInitialLocalMusicInfos(files, cache))
+    if (pendingPaths.length) {
+      toast(global.i18n.t('list_select_local_file_temp_add_tip', { total: pendingPaths.length }))
+      await handleUpdateMusics(files.map(f => f.path), throttleUpdateMusics, cache)
+    } else {
+      toast(global.i18n.t('list_select_local_file_result_tip', { total: files.length }))
+    }
+  } else {
+    await overwriteListMusics(listInfo.id, [])
+    toast(global.i18n.t('list_select_local_file_empty_tip'))
+  }
 }

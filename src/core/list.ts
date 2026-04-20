@@ -102,6 +102,8 @@ export const overwriteList = async(listInfoFull: LX.List.MyDefaultListInfoFull |
   switch (listInfoFull.id) {
     case LIST_IDS.DEFAULT:
     case LIST_IDS.LOVE:
+    case LIST_IDS.DOWNLOAD:
+    case LIST_IDS.LOCAL_MUSIC:
       break
 
     default:
@@ -178,4 +180,3 @@ export const setFetchingListStatus = (id: string, status: boolean) => {
 
 
 export { getUserLists, getListMusics } from '@/utils/listManage'
-

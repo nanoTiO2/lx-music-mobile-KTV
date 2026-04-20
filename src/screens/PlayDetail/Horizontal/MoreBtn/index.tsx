@@ -2,12 +2,18 @@ import { createStyle } from '@/utils/tools'
 import { View } from 'react-native'
 import PlayModeBtn from './PlayModeBtn'
 import MusicAddBtn from './MusicAddBtn'
+import DownloadBtn from './DownloadBtn'
 import TimeoutExitBtn from './TimeoutExitBtn'
+import KtvBtn from '@/screens/PlayDetail/components/KtvBtn'
+import LyricStageBtn from '@/screens/PlayDetail/components/LyricStageBtn'
 
 export default () => {
   return (
     <View style={styles.container}>
       <TimeoutExitBtn />
+      <LyricStageBtn direction="horizontal" />
+      <KtvBtn direction="horizontal" />
+      <DownloadBtn />
       <MusicAddBtn />
       <PlayModeBtn />
     </View>

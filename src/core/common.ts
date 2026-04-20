@@ -16,6 +16,7 @@ import { getSelectedManagedFolder, saveFontSize, saveViewPrevState, setSelectedM
 import { showPactModal as handleShowPactModal } from '@/navigation'
 import { hideDesktopLyricView } from '@/utils/nativeModules/lyricDesktop'
 import { getPersistedUriList, selectManagedFolder } from '@/utils/fs'
+import { checkStoragePermissions as checkLegacyStoragePermissions, requestStoragePermission as requestLegacyStoragePermission } from '@/utils/tools'
 
 
 const throttleSaveSetting = throttle(() => {
@@ -95,18 +96,27 @@ export const showPactModal = () => {
 
 export const checkStoragePermissions = async() => {
   const selectedManagedFolder = await getSelectedManagedFolder()
-  if (selectedManagedFolder) return (await getPersistedUriList()).some(uri => selectedManagedFolder.startsWith(uri))
-  return false
+  if (selectedManagedFolder) {
+    try {
+      if ((await getPersistedUriList()).some(uri => selectedManagedFolder.startsWith(uri))) return true
+    } catch {}
+  }
+  return checkLegacyStoragePermissions()
 }
 
 export const requestStoragePermission = async() => {
   const isGranted = await checkStoragePermissions()
   if (isGranted) return isGranted
 
-  const uri = await selectManagedFolder()
-  if (!uri.isDirectory) return false
-  await setSelectedManagedFolder(uri.path)
-  return true
+  try {
+    const uri = await selectManagedFolder()
+    if (uri.isDirectory) {
+      await setSelectedManagedFolder(uri.path)
+      return true
+    }
+  } catch {}
+
+  return requestLegacyStoragePermission()
 }
 
 export const setBgPic = (pic: string | null) => {

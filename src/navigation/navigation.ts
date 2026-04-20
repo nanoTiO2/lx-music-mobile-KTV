@@ -4,6 +4,7 @@ import { Navigation } from 'react-native-navigation'
 import {
   HOME_SCREEN,
   PLAY_DETAIL_SCREEN,
+  LYRIC_STAGE_SCREEN,
   SONGLIST_DETAIL_SCREEN,
   COMMENT_SCREEN,
   // SETTING_SCREEN,
@@ -190,6 +191,57 @@ export function pushPlayDetailScreen(componentId: string, skipAnimation = false)
                   from: 0,
                   to: windowSizeTools.getSize().width,
                   duration: 300,
+                },
+              },
+            },
+          },
+        },
+      },
+    })
+  })
+}
+export function pushLyricStageScreen(componentId: string) {
+  requestAnimationFrame(() => {
+    const theme = themeState.theme
+
+    void Navigation.push(componentId, {
+      component: {
+        name: LYRIC_STAGE_SCREEN,
+        options: {
+          topBar: {
+            visible: false,
+            height: 0,
+            drawBehind: false,
+          },
+          statusBar: {
+            drawBehind: true,
+            visible: true,
+            style: 'light',
+            backgroundColor: 'transparent',
+          },
+          navigationBar: {
+            backgroundColor: '#050505',
+          },
+          layout: {
+            componentBackgroundColor: '#050505',
+            orientation: ['portrait', 'landscape'],
+          },
+          animations: {
+            push: {
+              content: {
+                alpha: {
+                  from: 0,
+                  to: 1,
+                  duration: 180,
+                },
+              },
+            },
+            pop: {
+              content: {
+                alpha: {
+                  from: 1,
+                  to: 0,
+                  duration: 140,
                 },
               },
             },

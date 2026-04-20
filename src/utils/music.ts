@@ -1,8 +1,14 @@
 import { existsFile } from './fs'
 
-
 export const getLocalFilePath = async(musicInfo: LX.Music.MusicInfoLocal): Promise<string> => {
-  if (await existsFile(musicInfo.meta.filePath)) return musicInfo.meta.filePath
-  // 直接从应用外 intent 调用打开的文件，ogg等类型无法判断文件是否存在，但这类文件路径为纯数字
-  return /\/\d+$/.test(musicInfo.meta.filePath) ? musicInfo.meta.filePath : ''
+  const filePath = musicInfo.meta?.filePath?.trim() ?? ''
+  if (!filePath) return ''
+  if (await existsFile(filePath)) return filePath
+  return /\/\d+$/.test(filePath) ? filePath : ''
+}
+
+export const getLocalMetaFilePath = (musicInfo: LX.Music.MusicInfoLocal) => {
+  return musicInfo.meta?.originFilePath?.trim() ??
+    musicInfo.meta?.filePath?.trim() ??
+    ''
 }

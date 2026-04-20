@@ -47,11 +47,22 @@ export default async(setting: LX.AppSetting) => {
     }
   })
 
+  const handleSeekLyricSync = () => {
+    if (playerState.isPlay) {
+      setTimeout(() => {
+        play()
+      }, 120)
+    } else {
+      pause()
+    }
+  }
+
 
   global.app_event.on('play', play)
   global.app_event.on('pause', pause)
   global.app_event.on('stop', stop)
   global.app_event.on('error', pause)
+  global.app_event.on('setProgress', handleSeekLyricSync)
   global.app_event.on('musicToggled', stop)
   global.app_event.on('lyricUpdated', setLyric)
 }

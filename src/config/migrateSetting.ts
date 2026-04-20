@@ -45,5 +45,11 @@ export default (setting: any): Partial<LX.AppSetting> => {
     setting['theme.id'] = setting.themeId
   }
 
+  if (!Array.isArray(setting['list.importMusicDirs'])) {
+    setting['list.importMusicDirs'] = setting['list.importMusicDir']
+      ? [setting['list.importMusicDir']]
+      : []
+  }
+
   return setting
 }

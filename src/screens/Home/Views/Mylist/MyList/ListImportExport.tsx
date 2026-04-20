@@ -1,6 +1,8 @@
 import ChoosePath, { type ChoosePathType } from '@/components/common/ChoosePath'
 import { LXM_FILE_EXT_RXP } from '@/config/constant'
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
+import { updateSetting } from '@/core/common'
+import settingState from '@/store/setting/state'
 import { handleExport, handleImport, handleImportMediaFile } from './listAction'
 
 export interface SelectInfo {
@@ -80,6 +82,7 @@ export default forwardRef<ListImportExportType, {}>((props, ref) => {
       }
     },
     selectFile(listInfo, index) {
+      const initialDir = settingState.setting['list.importMusicDir'] || ''
       selectInfoRef.current = {
         action: 'selectFile',
         listInfo,
@@ -90,6 +93,7 @@ export default forwardRef<ListImportExportType, {}>((props, ref) => {
           title: global.i18n.t('list_select_local_file_desc'),
           dirOnly: true,
           isPersist: true,
+          initialDir,
         })
       } else {
         setVisible(true)
@@ -98,6 +102,7 @@ export default forwardRef<ListImportExportType, {}>((props, ref) => {
             title: global.i18n.t('list_select_local_file_desc'),
             dirOnly: true,
             isPersist: true,
+            initialDir,
           })
         })
       }
@@ -114,6 +119,9 @@ export default forwardRef<ListImportExportType, {}>((props, ref) => {
         handleExport(selectInfoRef.current.listInfo, path)
         break
       case 'selectFile':
+        if (settingState.setting['list.importMusicDir'] != path) {
+          updateSetting({ 'list.importMusicDir': path })
+        }
         void handleImportMediaFile(selectInfoRef.current.listInfo, path)
         break
     }
