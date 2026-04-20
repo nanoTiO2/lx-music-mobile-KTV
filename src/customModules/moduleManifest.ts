@@ -109,6 +109,22 @@ export const customModuleManifest: CustomModuleDefinition[] = [
     upstreamMergeRisk: 'high',
     desktopPortNotes: '桌面端进度条与歌词同步逻辑可复用，但底层 seek 完成时机需重新对接桌面播放器接口。',
   },
+  {
+    id: 'desktop_port_scaffold',
+    name: '桌面迁移骨架模块',
+    summary: '为未来桌面端迁移补齐共享协议、歌词舞台预设和桌面适配接口，避免后续继续从移动端源码里手工拆逻辑。',
+    platform: ['mobile-js', 'desktop-portable'],
+    files: [
+      'src/shared/musicProfileTag.ts',
+      'src/shared/lyricStagePresets.ts',
+      'src/desktopPort/contracts.ts',
+      'src/desktopPort/modulePlan.ts',
+      'src/desktopPort/index.ts',
+      'docs/2026-04-20_桌面迁移骨架说明.md',
+    ],
+    upstreamMergeRisk: 'low',
+    desktopPortNotes: '这是专门为桌面迁移准备的结构层，本身不依赖 Android 原生实现，建议持续把共享协议优先沉淀到这里。',
+  },
 ]
 
 export default customModuleManifest

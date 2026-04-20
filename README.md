@@ -1,117 +1,225 @@
-<p align="center"><a href="https://github.com/lyswhut/lx-music-mobile"><img width="200" src="https://github.com/lyswhut/lx-music-mobile/blob/master/doc/images/icon.png" alt="lx-music logo"></a></p>
+# LX Music Mobile KTV Fork
 
-<h1 align="center">LX Music 移动版</h1>
+这是基于 `lyswhut/lx-music-mobile` 的二开分支，当前重点不是保持上游原样，而是面向：
 
-<p align="center">
-  <a href="https://github.com/lyswhut/lx-music-mobile/releases"><img src="https://img.shields.io/github/release/lyswhut/lx-music-mobile" alt="Release version"></a>
-  <a href="https://github.com/lyswhut/lx-music-mobile/actions/workflows/release.yml"><img src="https://github.com/lyswhut/lx-music-mobile/workflows/Build/badge.svg" alt="Build status"></a>
-  <a href="https://github.com/lyswhut/lx-music-mobile/actions/workflows/beta-pack.yml"><img src="https://github.com/lyswhut/lx-music-mobile/workflows/Build%20Beta/badge.svg" alt="Build status"></a>
-  <a href="https://github.com/facebook/react-native"><img src="https://img.shields.io/github/package-json/dependency-version/lyswhut/lx-music-mobile/react-native/master" alt="React native version"></a>
-  <!-- <a href="https://github.com/lyswhut/lx-music-mobile/releases"><img src="https://img.shields.io/github/downloads/lyswhut/lx-music-mobile/latest/total" alt="Downloads"></a> -->
-  <a href="https://github.com/lyswhut/lx-music-mobile/tree/dev"><img src="https://img.shields.io/github/package-json/v/lyswhut/lx-music-mobile/dev" alt="Dev branch version"></a>
-  <!-- <a href="https://github.com/lyswhut/lx-music-mobile/blob/master/LICENSE"><img src="https://img.shields.io/github/license/lyswhut/lx-music-mobile" alt="License"></a> -->
-</p>
+- 本地音乐 / KTV 使用场景
+- Android 7 到 Android 13 的兼容与稳定性
+- 投影歌词展示
+- 低配设备可用性
+- 后续桌面端迁移
 
-<p align="center">一个基于 React Native 开发的音乐软件</p>
+当前仓库地址：
 
-## 说明
+- Fork 仓库：`https://github.com/nanoTiO2/lx-music-mobile-KTV`
+- 上游仓库：`https://github.com/lyswhut/lx-music-mobile`
 
-所用技术栈：
+当前二开版本：
 
-- React Native
-- Redux
+- `versionName`: `1.91`
+- `versionCode`: `75`
 
-已支持的平台：
+## 已完成的定制能力
 
-- Android 5 及以上
+### 1. 本地播放 / 导入
 
-***注：目前没有计划支持 iOS 和 HarmonyOS NEXT**。*<br>
-*桌面版项目地址：<https://github.com/lyswhut/lx-music-desktop>*<br>
-*LX Music 项目发展调整与新项目计划：https://github.com/lyswhut/lx-music-desktop/issues/1912*
+- 新增本地音乐入口与目录导入增强
+- 本地列表导入支持缓存复用，避免重复读取元数据
+- 本地歌曲已有歌词和元数据时默认离线优先
+- 手动“在线匹配”才允许联网补歌词 / 图片
 
-软件变化请查看[更新日志](https://github.com/lyswhut/lx-music-mobile/blob/master/CHANGELOG.md)。
+### 2. KTV / 变调 / 变速
 
-软件下载请查看 [GitHub Releases](https://github.com/lyswhut/lx-music-mobile/releases)。
+- 新增 Android 原生 `MixerModule`
+- 本地播放支持变调、变速、KTV 相关过渡能力
+- 修复低版本和安卓 13 上变调不生效的问题
 
-使用常见问题请参阅[移动版常见问题](https://lyswhut.github.io/lx-music-doc/mobile/faq)。
+### 3. 歌词舞台 / 投影模式
 
-目前本项目的原始发布地址只有 [**GitHub**](https://github.com/lyswhut/lx-music-mobile/releases)，其他渠道均为第三方转载发布，与本项目无关！
+- 新增独立歌词舞台页面
+- 支持纯黑背景投影模式
+- 支持低耗模式
+- 支持 1 秒无操作自动收起菜单
+- 支持跑马灯配色切换
+- 支持手动横竖屏 / 镜像
+- 支持内置中文字体 `思源黑体`
 
-为了提高使用门槛，本软件内的默认设置、UI 操作不以新手友好为目标，所以使用前建议先根据你的喜好浏览调整一遍软件设置，阅读一遍[音乐播放列表机制](https://lyswhut.github.io/lx-music-doc/mobile/faq/playlist)。
+### 4. 调号 / 节拍分析
 
-### 数据同步服务
+- 分析改为手动触发，减少低配设备负担
+- 增加进度反馈
+- 分析结果写入 `.lrc` 头部和 `.lx-profile.json`
+- 下次优先读取已保存结果
 
-从 v1.0.0 起，我们发布了一个独立的[数据同步服务](https://github.com/lyswhut/lx-music-sync-server#readme)。如果你有服务器，可以将其部署到服务器上作为私人多端同步服务使用，详情看该项目说明。
+### 5. 播放中拖动进度条修复
 
-## 贡献代码
+- 修复底部进度条公式错误
+- 修复 seek 期间旧轮询抢写导致的回跳
+- 修复拖动后歌词容易不同步
+- 修复 Android 原生 mixer 播放中 seek 卡顿
 
-本项目欢迎 PR，但为了 PR 能顺利合并，需要注意以下几点：
+### 6. Android 低版本兼容
 
-- 对于添加新功能的 PR，建议在提交 PR 前先创建 Issue 进行说明，以确认该功能是否确实需要；
-- 对于修复 bug 的 PR，请提供修复前后的说明及重现方式；
-- 对于其他类型的 PR，则适当附上说明。
+- 补强 Android 7 / 魔改系统存储权限流程
+- 避免把关键操作建立在系统设置手动授权之上
+- 优化低内存设备和投影仪场景
 
-贡献代码步骤：
+## 关键目录
 
-1. 参照[源码使用方法](https://lyswhut.github.io/lx-music-doc/mobile/use-source-code)设置开发环境；
-2. 克隆本仓库代码并切换至 `dev` 分支进行开发；
-3. 提交 PR 至 `dev` 分支。
+- `src/customModules/`
+  - 二开功能模块清单
+- `src/shared/`
+  - 后续移动端 / 桌面端可共享的协议与纯逻辑
+- `src/desktopPort/`
+  - 桌面迁移骨架与适配接口
+- `docs/`
+  - 每一轮重要改动的时间戳说明
+- `scripts/`
+  - 日志数据库与辅助脚本
 
-<!--
-## 用户界面
+## 本次已经沉淀的模块索引
 
-<p><img width="100%" src="https://github.com/lyswhut/lx-music-mobile/blob/master/doc/images/app.png" alt="lx-music mobile UI"></p> -->
+模块总表：
 
-## 项目协议
+- [src/customModules/moduleManifest.ts](src/customModules/moduleManifest.ts)
 
-本项目基于 [Apache License 2.0](https://github.com/lyswhut/lx-music-mobile/blob/master/LICENSE) 许可证发行，以下协议是对于 Apache License 2.0 的补充，如有冲突，以以下协议为准。
+当前已归档的模块包括：
 
----
+- `permission_compat`
+- `local_offline_import_cache`
+- `mixer_pitch_seek`
+- `manual_profile_analysis`
+- `lyric_stage_projection`
+- `seek_sync`
 
-*词语约定：本协议中的“本项目”指 LX Music（洛雪音乐）移动版项目；“使用者”指签署本协议的使用者；“官方音乐平台”指对本项目内置的包括酷我、酷狗、咪咕等音乐源的官方平台统称；“版权数据”指包括但不限于图像、音频、名字等在内的他人拥有所属版权的数据。*
+以后新增功能，先登记到 `moduleManifest.ts`，再改代码。
 
-### 一、数据来源
+## 桌面端迁移骨架
 
-1.1 本项目的各官方平台在线数据来源原理是从其公开服务器中拉取数据（与未登录状态在官方平台 APP 获取的数据相同），经过对数据简单地筛选与合并后进行展示，因此本项目不对数据的合法性、准确性负责。
+本仓库已经补了桌面迁移准备层，不再从零开始：
 
-1.2 本项目本身没有获取某个音频数据的能力，本项目使用的在线音频数据来源来自软件设置内“自定义源”设置所选择的“源”返回的在线链接。例如播放某首歌，本项目所做的只是将希望播放的歌曲名、艺术家等信息传递给“源”，若“源”返回了一个链接，则本项目将认为这就是该歌曲的音频数据而进行使用，至于这是不是正确的音频数据本项目无法校验其准确性，所以使用本项目的过程中可能会出现希望播放的音频与实际播放的音频不对应或者无法播放的问题。
+- [src/shared/musicProfileTag.ts](src/shared/musicProfileTag.ts)
+  - `lx_music_profile` 的 LRC 标签读写协议
+- [src/shared/lyricStagePresets.ts](src/shared/lyricStagePresets.ts)
+  - 歌词舞台的字体、配色、模式预设
+- [src/desktopPort/contracts.ts](src/desktopPort/contracts.ts)
+  - 桌面端音频、窗口、文件系统适配接口
+- [src/desktopPort/modulePlan.ts](src/desktopPort/modulePlan.ts)
+  - 哪些模块可直接迁移，哪些必须重写
 
-1.3 本项目的非官方平台数据（例如“我的列表”内列表）来自使用者本地系统或者使用者连接的同步服务，本项目不对这些数据的合法性、准确性负责。
+这套骨架的目标是：
 
-### 二、版权数据
+1. 共享纯逻辑与协议
+2. 把平台差异收口到 adapter 层
+3. 未来接 Electron / Node 音频引擎时不再重拆业务代码
 
-2.1 使用本项目的过程中可能会产生版权数据。对于这些版权数据，本项目不拥有它们的所有权。为了避免侵权，使用者务必在 **24 小时内** 清除使用本项目的过程中所产生的版权数据。
+## 开发环境
 
-### 三、音乐平台别名
+建议环境：
 
-3.1 本项目内的官方音乐平台别名为本项目内对官方音乐平台的一个称呼，不包含恶意。如果官方音乐平台觉得不妥，可联系本项目更改或移除。
+- Windows Terminal / PowerShell 7
+- Node.js `>= 18`
+- npm `>= 8.5.2`
+- JDK 17
+- Android SDK / ADB
 
-### 四、资源使用
+## 安装依赖
 
-4.1 本项目内使用的部分包括但不限于字体、图片等资源来源于互联网。如果出现侵权可联系本项目移除。
+```bash
+npm install
+```
 
-### 五、免责声明
+## 常用命令
 
-5.1 由于使用本项目产生的包括由于本协议或由于使用或无法使用本项目而引起的任何性质的任何直接、间接、特殊、偶然或结果性损害（包括但不限于因商誉损失、停工、计算机故障或故障引起的损害赔偿，或任何及所有其他商业损害或损失）由使用者负责。
+### Android 调试
 
-### 六、使用限制
+```bash
+npm run dev
+```
 
-6.1 本项目完全免费，且开源发布于 GitHub 面向全世界人用作对技术的学习交流。本项目不对项目内的技术可能存在违反当地法律法规的行为作保证。
+### 启动 Metro
 
-6.2 **禁止在违反当地法律法规的情况下使用本项目。** 对于使用者在明知或不知当地法律法规不允许的情况下使用本项目所造成的任何违法违规行为由使用者承担，本项目不承担由此造成的任何直接、间接、特殊、偶然或结果性责任。
+```bash
+npm start
+```
 
-### 七、版权保护
+### 清缓存启动 Metro
 
-7.1 音乐平台不易，请尊重版权，支持正版。
+```bash
+npm run sc
+```
 
-### 八、非商业性质
+### 构建 Debug APK
 
-8.1 本项目仅用于对技术可行性的探索及研究，不接受任何商业（包括但不限于广告等）合作及捐赠。
+```bash
+cd android
+gradlew.bat assembleDebug
+```
 
-### 九、接受协议
+### 推荐的 Windows 短路径构建方式
 
-9.1 若你使用了本项目，即代表你接受本协议。
+中文路径下 Gradle / Android 构建容易出问题，建议：
 
----
+```powershell
+subst X: "C:\Users\Administrator\Desktop\lx二开\lx-music-mobile-master\lx-music-mobile-master"
+Set-Location X:\android
+.\gradlew.bat assembleDebug
+```
 
-若对此有疑问请 mail to: lyswhut+qq.com (请将 `+` 替换成 `@`)
+## 测试机部署
+
+查看设备：
+
+```bash
+adb devices
+```
+
+覆盖安装：
+
+```bash
+adb install -r -d C:\Users\Administrator\Desktop\lx-music-mobile-v1.91-universal.apk
+```
+
+## 日志与协作
+
+本项目要求把过程写入 SQLite 日志数据库：
+
+- `codex_lx二开_log.db`
+
+每次新会话建议先读取数据库，再继续开发，避免重复劳动和遗漏遗留问题。
+
+## 重要说明文档
+
+推荐优先阅读：
+
+- [docs/2026-04-20_定制模块清单与主线合并_桌面迁移说明.md](docs/2026-04-20_定制模块清单与主线合并_桌面迁移说明.md)
+- [docs/2026-04-20_定制模块部署与合并清单.md](docs/2026-04-20_定制模块部署与合并清单.md)
+- [docs/2026-04-19_2334_v1.91_播放中拖动卡顿与歌词对齐修复说明.md](docs/2026-04-19_2334_v1.91_播放中拖动卡顿与歌词对齐修复说明.md)
+
+## 主线升级建议
+
+不要直接把上游新版本覆盖到当前目录。
+
+建议使用三层结构：
+
+- `upstream/`
+- `custom/`
+- `patches or docs/`
+
+主线升级时，优先对照：
+
+- `src/customModules/moduleManifest.ts`
+- `docs/2026-04-20_定制模块清单与主线合并_桌面迁移说明.md`
+
+按模块迁移，不按整仓硬合并。
+
+## 许可证与原始协议
+
+本项目仍基于上游 `Apache License 2.0`。
+
+上游项目与相关协议说明：
+
+- 上游仓库：`https://github.com/lyswhut/lx-music-mobile`
+- 许可证：`LICENSE`
+- 常见问题：`FAQ.md`
+
+如果你要继续对外发布，请自行确认当地法律法规、音乐版权与数据来源合规问题。
