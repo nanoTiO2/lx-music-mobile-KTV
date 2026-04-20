@@ -71,6 +71,7 @@ buck-out/
 /.codex_tmp/
 /logs/
 /docs/*.apk
+/publish/**/*.apk
 /codex_*_log.db
 /codex_*.db
 /index.android.bundle
