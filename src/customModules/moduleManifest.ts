@@ -61,6 +61,23 @@ export const customModuleManifest: CustomModuleDefinition[] = [
     desktopPortNotes: '桌面端不能直接复用 Android 原生模块，但变调/变速状态管理、接口定义和 seek 稳定策略可以复用，底层实现需改为 Electron/Node 原生音频引擎。',
   },
   {
+    id: 'ktv_grouping_and_seamless_switch',
+    name: '本地同名折叠与 KTV 无痕切换模块',
+    summary: '本地同名主体音频和 KTV 分轨文件仅展示一个列表项；点击 KTV 按键切换已有歌曲分轨时，优先走无痕快速切换链路而不是生硬重播。',
+    platform: ['android', 'mobile-js', 'desktop-portable'],
+    files: [
+      'src/utils/ktv.js',
+      'src/core/ktv/index.ts',
+      'src/plugins/player/utils.ts',
+      'src/screens/PlayDetail/components/KtvBtn.tsx',
+      'src/screens/Home/Views/LocalMusic/index.tsx',
+      'tests/test_ktv_grouping.js',
+      'android/app/src/main/java/cn/toside/music/mobile/mixer/MixerModule.java',
+    ],
+    upstreamMergeRisk: 'high',
+    desktopPortNotes: '同名折叠规则和分轨归组逻辑可复用到桌面端；无痕切换的业务编排也可复用，但底层热切实现需要桌面音频引擎另做适配。',
+  },
+  {
     id: 'manual_profile_analysis',
     name: '手动调号节拍分析与 LRC 写回模块',
     summary: '将耗资源的节拍/调号分析改成手动触发，提供进度反馈，并把分析结果写入 LRC 头部与本地 profile 缓存。',

@@ -26,12 +26,14 @@
 - 本地列表导入支持缓存复用，避免重复读取元数据
 - 本地歌曲已有歌词和元数据时默认离线优先
 - 手动“在线匹配”才允许联网补歌词 / 图片
+- 同一首歌的本地同名主体文件 / KTV 分轨文件会折叠为一个展示项，不在列表里重复显示多个同名文件
 
 ### 2. KTV / 变调 / 变速
 
 - 新增 Android 原生 `MixerModule`
 - 本地播放支持变调、变速、KTV 相关过渡能力
 - 修复低版本和安卓 13 上变调不生效的问题
+- 点击 `KTV` 按键切换已有本地分轨时，优先走已接管的原生混音无痕切换链路，尽量保留当前播放位置、歌词和主体元数据
 
 ### 3. 歌词舞台 / 投影模式
 
@@ -87,6 +89,7 @@
 - `permission_compat`
 - `local_offline_import_cache`
 - `mixer_pitch_seek`
+- `ktv_grouping_and_seamless_switch`
 - `manual_profile_analysis`
 - `lyric_stage_projection`
 - `seek_sync`
