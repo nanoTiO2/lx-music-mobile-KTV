@@ -31,15 +31,23 @@ export default () => {
   const handleSlidingComplete: SliderProps['onSlidingComplete'] = value => {
     setSliding(false)
     value = Math.trunc(value)
-    void setPitch(value)
-    if (pitchSemitones == value) return
-    updateSetting({ 'player.pitchSemitones': value })
+    void (async() => {
+      try {
+        await setPitch(value)
+        if (pitchSemitones == value) return
+        updateSetting({ 'player.pitchSemitones': value })
+      } catch {}
+    })()
   }
   const handleReset = () => {
     if (settingState.setting['player.pitchSemitones'] == 0) return
     setSliderValue(0)
-    void setPitch(0)
-    updateSetting({ 'player.pitchSemitones': 0 })
+    void (async() => {
+      try {
+        await setPitch(0)
+        updateSetting({ 'player.pitchSemitones': 0 })
+      } catch {}
+    })()
   }
 
   const value = isSliding ? sliderValue : pitchSemitones

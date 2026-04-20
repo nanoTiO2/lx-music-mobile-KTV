@@ -239,7 +239,7 @@ declare global {
       /**
        * 舞台歌词显示模式
        */
-      'lyricStage.mode': 'full' | 'threeLine' | 'teleprompter'
+      'lyricStage.mode': 'singleLine' | 'doubleLine' | 'full' | 'threeLine' | 'teleprompter'
 
       /**
        * 舞台歌词镜像模式
@@ -290,6 +290,21 @@ declare global {
        * 舞台歌词文字描边
        */
       'lyricStage.textStroke': boolean
+
+      /**
+       * 舞台歌词顶部工具栏偏移
+       */
+      'lyricStage.layoutTopOffset': number
+
+      /**
+       * 舞台歌词底部菜单偏移
+       */
+      'lyricStage.layoutBottomOffset': number
+
+      /**
+       * 舞台歌词内容区纵向偏移
+       */
+      'lyricStage.layoutContentOffset': number
 
       /**
        * 是否启用桌面歌词

@@ -53,6 +53,9 @@ const defaultSetting: LX.AppSetting = {
   'lyricStage.reduceMotion': false,
   'lyricStage.marqueeMode': false,
   'lyricStage.textStroke': true,
+  'lyricStage.layoutTopOffset': 0,
+  'lyricStage.layoutBottomOffset': 0,
+  'lyricStage.layoutContentOffset': 0,
 
   'desktopLyric.enable': false,
   'desktopLyric.isLock': false,

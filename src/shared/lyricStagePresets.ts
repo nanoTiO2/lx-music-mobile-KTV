@@ -105,6 +105,8 @@ export const LYRIC_STAGE_COLOR_THEMES = {
 } as const
 
 export const LYRIC_STAGE_MODE_LABELS = {
+  singleLine: '一行',
+  doubleLine: '二行',
   full: '满屏',
   threeLine: '三行',
   teleprompter: '提词器',
@@ -116,7 +118,7 @@ export const LYRIC_STAGE_MIRROR_LABELS = {
   vertical: '上下镜像',
 } as const
 
-export const LYRIC_STAGE_MODE_ORDER = ['full', 'threeLine', 'teleprompter'] as const
+export const LYRIC_STAGE_MODE_ORDER = ['singleLine', 'doubleLine', 'threeLine', 'full', 'teleprompter'] as const
 export const LYRIC_STAGE_MIRROR_ORDER = ['none', 'horizontal', 'vertical'] as const
 export const LYRIC_STAGE_ROTATE_ORDER = ['auto', 'landscape', 'portrait'] as const
 export const LYRIC_STAGE_ROTATE_LABELS = {

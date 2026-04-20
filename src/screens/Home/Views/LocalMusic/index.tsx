@@ -22,14 +22,15 @@ const getFolderGroupLabel = (group: AudioFolderGroup) => {
   return `${group.rootName} / ${group.relativePath} (${group.files.length})`
 }
 
+let localMusicScannedDirsSignatureCache = ''
+let localMusicScannedGroupsCache: AudioFolderGroup[] = []
+let localMusicImportedFolderSignatureCache = ''
+
 export default () => {
   const t = useI18n()
   const theme = useTheme()
   const choosePathRef = useRef<ChoosePathType>(null)
   const selectedFolderPathRef = useRef('')
-  const scannedDirsSignatureRef = useRef('')
-  const scannedGroupsCacheRef = useRef<AudioFolderGroup[]>([])
-  const importedFolderSignatureRef = useRef('')
   const [visible, setVisible] = useState(false)
   const [folderGroups, setFolderGroups] = useState<AudioFolderGroup[]>([])
   const [selectedFolderPath, setSelectedFolderPath] = useState('')
@@ -78,8 +79,8 @@ export default () => {
     setSelectedFolderPath(nextGroup?.dirPath ?? '')
     setActiveList(LIST_IDS.LOCAL_MUSIC)
     const importSignature = `${nextGroup?.dirPath ?? ''}__${nextGroup?.files.length ?? 0}`
-    if (importedFolderSignatureRef.current == importSignature) return
-    importedFolderSignatureRef.current = importSignature
+    if (localMusicImportedFolderSignatureCache == importSignature) return
+    localMusicImportedFolderSignatureCache = importSignature
     await handleImportMediaFiles(localMusicList, nextGroup?.files ?? [])
   }
 
@@ -111,14 +112,14 @@ export default () => {
       if (!localImportDirs.length) {
         setFolderGroups([])
         setSelectedFolderPath('')
-        scannedDirsSignatureRef.current = ''
-        scannedGroupsCacheRef.current = []
-        importedFolderSignatureRef.current = ''
+        localMusicScannedDirsSignatureCache = ''
+        localMusicScannedGroupsCache = []
+        localMusicImportedFolderSignatureCache = ''
         await handleImportMediaFiles(localMusicList, [])
         return
       }
-      if (scannedDirsSignatureRef.current == localImportDirsSignature && scannedGroupsCacheRef.current.length) {
-        const groups = scannedGroupsCacheRef.current
+      if (localMusicScannedDirsSignatureCache == localImportDirsSignature && localMusicScannedGroupsCache.length) {
+        const groups = localMusicScannedGroupsCache
         setFolderGroups(groups)
         await applyFolderSelection(groups, selectedFolderPathRef.current)
         return
@@ -132,8 +133,8 @@ export default () => {
             if (pathCompare) return pathCompare
             return a.relativePath.localeCompare(b.relativePath)
           })
-        scannedDirsSignatureRef.current = localImportDirsSignature
-        scannedGroupsCacheRef.current = groups
+        localMusicScannedDirsSignatureCache = localImportDirsSignature
+        localMusicScannedGroupsCache = groups
         setFolderGroups(groups)
         await applyFolderSelection(groups, selectedFolderPathRef.current)
       } finally {
@@ -148,15 +149,16 @@ export default () => {
 
   const handleAddFolder = (path: string) => {
     const nextDirs = normalizeDirPaths([...localImportDirs, path])
-    scannedDirsSignatureRef.current = ''
+    localMusicScannedDirsSignatureCache = ''
+    localMusicImportedFolderSignatureCache = ''
     syncImportDirs(nextDirs, path)
     toast(t('local_music_scan_start'))
   }
 
   const handleRemoveFolder = (path: string) => {
     const nextDirs = localImportDirs.filter(dir => dir != path)
-    scannedDirsSignatureRef.current = ''
-    importedFolderSignatureRef.current = ''
+    localMusicScannedDirsSignatureCache = ''
+    localMusicImportedFolderSignatureCache = ''
     syncImportDirs(nextDirs)
   }
 
