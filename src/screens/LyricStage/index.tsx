@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { AppState, FlatList, type FlatListProps, Platform, StatusBar as RNStatusBar, TouchableOpacity, View, Vibration, useWindowDimensions, type GestureResponderEvent, ScrollView } from 'react-native'
+import { AppState, FlatList, type FlatListProps, Platform, StatusBar as RNStatusBar, TouchableOpacity, View, Vibration, useWindowDimensions, ScrollView } from 'react-native'
 import Text from '@/components/common/Text'
 import { AnimatedColorText } from '@/components/common/Text'
 import Popup, { type PopupType } from '@/components/common/Popup'
@@ -29,14 +29,16 @@ import {
   LYRIC_STAGE_MIRROR_ORDER,
   LYRIC_STAGE_MODE_LABELS,
   LYRIC_STAGE_MODE_ORDER,
-  LYRIC_STAGE_ROTATE_LABELS,
-  LYRIC_STAGE_ROTATE_ORDER,
 } from '@/shared/lyricStagePresets'
 
 type FlatListType = FlatListProps<Line>
 type StageMode = LX.AppSetting['lyricStage.mode']
 type MirrorMode = LX.AppSetting['lyricStage.mirror']
 type ColorTheme = LX.AppSetting['lyricStage.colorTheme']
+type MarqueeSpeed = LX.AppSetting['lyricStage.marqueeSpeed']
+type GlowTheme = LX.AppSetting['lyricStage.textGlowTheme']
+type TextGlowMode = LX.AppSetting['lyricStage.textGlowMode']
+type StageOrientationMode = 'landscape' | 'portrait'
 
 const FONT_OPTIONS = LYRIC_STAGE_FONT_OPTIONS
 const COLOR_THEMES = LYRIC_STAGE_COLOR_THEMES as Record<ColorTheme, (typeof LYRIC_STAGE_COLOR_THEMES)[keyof typeof LYRIC_STAGE_COLOR_THEMES]>
@@ -44,16 +46,27 @@ const MODE_LABELS = LYRIC_STAGE_MODE_LABELS as Record<StageMode, string>
 const MIRROR_LABELS = LYRIC_STAGE_MIRROR_LABELS as Record<MirrorMode, string>
 const MODE_ORDER = [...LYRIC_STAGE_MODE_ORDER] as StageMode[]
 const MIRROR_ORDER = [...LYRIC_STAGE_MIRROR_ORDER] as MirrorMode[]
-const ROTATE_ORDER = LYRIC_STAGE_ROTATE_ORDER
-type RotateMode = typeof ROTATE_ORDER[number]
-const ROTATE_LABELS = LYRIC_STAGE_ROTATE_LABELS as Record<RotateMode, string>
 const MARQUEE_THEME_ORDER = [...LYRIC_STAGE_MARQUEE_THEME_ORDER] as ColorTheme[]
+const MARQUEE_SPEED_LABELS: Record<MarqueeSpeed, string> = {
+  1: '快',
+  2: '中',
+  3: '慢',
+}
+const TEXT_GLOW_MODE_LABELS: Record<TextGlowMode, string> = {
+  soft: '柔和霓虹',
+  sign: '招牌灯',
+}
+const GLOW_THEME_ORDER: GlowTheme[] = ['emerald', 'gold', 'rose']
+const GLOW_THEME_LABELS: Record<GlowTheme, string> = {
+  emerald: '青',
+  gold: '金',
+  rose: '玫',
+}
 
 const BUTTON_FEEDBACK_MS = 12
-const LONG_PRESS_MS = 320
-const LONG_PRESS_MOVE_THRESHOLD = 14
-const RADIAL_MENU_IDLE_MS = 1000
-const POINTER_ACTIVITY_DELAY_MS = 1000
+const CONTROL_IDLE_MS = 2000
+const RADIAL_MENU_IDLE_MS = 2000
+const POINTER_ACTIVITY_DELAY_MS = 2000
 const RADIAL_MENU_SIZE = 172
 const RADIAL_ACTION_SIZE = 48
 const RADIAL_PANEL_WIDTH = 248
@@ -105,7 +118,7 @@ const getFocusLineIndexes = (mode: StageMode, activeIndex: number) => {
 
 const formatStageText = (text: string) => text.replace(/^\s*[a-z]/, letter => letter.toUpperCase())
 
-const StageLine = memo(({ line, active, fontScale, fontFamily, projector, reduceMotion, lineHeightScale, themeColors, mode, textStroke }: {
+const StageLine = memo(({ line, active, fontScale, fontFamily, projector, reduceMotion, lineHeightScale, themeColors, glowThemeColors, mode, textStroke, textGlow, textGlowMode }: {
   line: Line
   active: boolean
   fontScale: number
@@ -114,8 +127,11 @@ const StageLine = memo(({ line, active, fontScale, fontFamily, projector, reduce
   reduceMotion: boolean
   lineHeightScale: number
   themeColors: typeof COLOR_THEMES[ColorTheme]
+  glowThemeColors: typeof COLOR_THEMES[ColorTheme]
   mode: StageMode
   textStroke: boolean
+  textGlow: boolean
+  textGlowMode: TextGlowMode
 }) => {
   const size = (projector ? 38 : 32) * fontScale
   const inactiveSize = size * 0.88
@@ -130,16 +146,23 @@ const StageLine = memo(({ line, active, fontScale, fontFamily, projector, reduce
       ? (active ? 'rgba(0,0,0,0.98)' : 'rgba(0,0,0,0.92)')
       : (active ? 'rgba(255,255,255,0.96)' : 'rgba(255,255,255,0.86)')
     : 'transparent'
+  const glowShadowColor = textGlow ? (active ? glowThemeColors.active : glowThemeColors.sub) : shadowColor
+  const glowShadowRadius = textGlow
+    ? textGlowMode == 'sign'
+      ? (projector ? (active ? 24 : 14) : (active ? 16 : 10))
+      : (projector ? (active ? 18 : 10) : (active ? 12 : 7))
+    : textStroke ? (projector ? (active ? 6 : 4.2) : (active ? 3.6 : 2.8)) : 0
+  const glowShadowOffset = textGlow && textGlowMode == 'sign'
+    ? { width: 0, height: active ? 1 : 0 }
+    : { width: 0, height: 0 }
 
   return (
     <View
       style={[
         styles.lineWrap,
-        projector ? styles.lineWrapProjector : null,
         isTeleprompter ? styles.lineWrapTeleprompter : null,
         isFullMode ? styles.lineWrapFull : null,
         active ? styles.lineWrapActive : null,
-        projector && active ? styles.lineWrapProjectorActive : null,
       ]}
     >
       <TextComp
@@ -154,8 +177,9 @@ const StageLine = memo(({ line, active, fontScale, fontFamily, projector, reduce
             opacity: active ? 1 : projector ? 0.78 : 0.48,
             textTransform: 'capitalize',
             textAlign: 'center',
-            textShadowColor: shadowColor,
-            textShadowRadius: textStroke ? (projector ? (active ? 6 : 4.2) : (active ? 3.6 : 2.8)) : 0,
+            textShadowOffset: glowShadowOffset,
+            textShadowColor: glowShadowColor,
+            textShadowRadius: glowShadowRadius,
           },
         ]}
         size={fontSize}
@@ -176,8 +200,8 @@ const StageLine = memo(({ line, active, fontScale, fontFamily, projector, reduce
                 opacity: 0.82,
                 lineHeight: setSpText(Math.max(18, size * 0.48)),
                 textAlign: 'center',
-                textShadowColor: textStroke ? (projector ? 'rgba(0,0,0,0.92)' : 'rgba(255,255,255,0.84)') : 'transparent',
-                textShadowRadius: textStroke ? (projector ? 3.2 : 2.2) : 0,
+                textShadowColor: textGlow ? glowThemeColors.sub : textStroke ? (projector ? 'rgba(0,0,0,0.92)' : 'rgba(255,255,255,0.84)') : 'transparent',
+                textShadowRadius: textGlow ? (textGlowMode == 'sign' ? (projector ? 10 : 6.2) : (projector ? 7 : 4.2)) : textStroke ? (projector ? 3.2 : 2.2) : 0,
               },
             ]}
             size={Math.max(18, size * 0.48)}
@@ -192,7 +216,7 @@ const StageLine = memo(({ line, active, fontScale, fontFamily, projector, reduce
   )
 })
 
-const FocusLineMode = ({ lines, activeIndex, fontScale, fontFamily, projector, reduceMotion, lineHeightScale, themeColors, mode, textStroke, onTouchStart, onTouchMove, onTouchEnd }: {
+const FocusLineMode = ({ lines, activeIndex, fontScale, fontFamily, projector, reduceMotion, lineHeightScale, themeColors, glowThemeColors, mode, textStroke, textGlow, textGlowMode }: {
   lines: Line[]
   activeIndex: number
   fontScale: number
@@ -201,23 +225,15 @@ const FocusLineMode = ({ lines, activeIndex, fontScale, fontFamily, projector, r
   reduceMotion: boolean
   lineHeightScale: number
   themeColors: typeof COLOR_THEMES[ColorTheme]
+  glowThemeColors: typeof COLOR_THEMES[ColorTheme]
   mode: StageMode
   textStroke: boolean
-  onTouchStart: (event: GestureResponderEvent) => void
-  onTouchMove: (event: GestureResponderEvent) => void
-  onTouchEnd: () => void
+  textGlow: boolean
+  textGlowMode: TextGlowMode
 }) => {
   const indexes = getFocusLineIndexes(mode, activeIndex)
   return (
-    <View
-      style={styles.threeLineContainer}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      onTouchCancel={onTouchEnd}
-      onStartShouldSetResponder={() => true}
-      onMoveShouldSetResponder={() => true}
-    >
+    <View style={styles.threeLineContainer}>
       {indexes.map(index => {
         const line = lines[index]
         if (!line) return <View key={index} style={styles.threeLineSpacer} />
@@ -233,8 +249,11 @@ const FocusLineMode = ({ lines, activeIndex, fontScale, fontFamily, projector, r
             reduceMotion={reduceMotion}
             lineHeightScale={lineHeightScale}
             themeColors={themeColors}
+            glowThemeColors={glowThemeColors}
             mode={mode}
             textStroke={textStroke}
+            textGlow={textGlow}
+            textGlowMode={textGlowMode}
           />
         )
       })}
@@ -260,7 +279,12 @@ export default memo(({ componentId }: { componentId: string }) => {
   const usePureBlackBackground = useSettingValue('lyricStage.usePureBlackBackground')
   const reduceMotion = useSettingValue('lyricStage.reduceMotion')
   const marqueeMode = useSettingValue('lyricStage.marqueeMode')
+  const marqueeBaseTheme = useSettingValue('lyricStage.marqueeBaseTheme')
+  const marqueeSpeed = useSettingValue('lyricStage.marqueeSpeed')
   const textStroke = useSettingValue('lyricStage.textStroke')
+  const textGlow = useSettingValue('lyricStage.textGlow')
+  const textGlowTheme = useSettingValue('lyricStage.textGlowTheme')
+  const textGlowMode = useSettingValue('lyricStage.textGlowMode')
   const layoutTopOffset = useSettingValue('lyricStage.layoutTopOffset')
   const layoutBottomOffset = useSettingValue('lyricStage.layoutBottomOffset')
   const layoutContentOffset = useSettingValue('lyricStage.layoutContentOffset')
@@ -280,14 +304,9 @@ export default memo(({ componentId }: { componentId: string }) => {
   const [isPlaybackRateSliding, setPlaybackRateSliding] = useState(false)
   const [pitchValue, setPitchValue] = useState(pitchSemitones)
   const [isPitchSliding, setPitchSliding] = useState(false)
+  const [orientationMode, setOrientationMode] = useState<StageOrientationMode>('landscape')
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null)
   const radialHideTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const touchStartRef = useRef<{ x: number, y: number } | null>(null)
-  const ignoreNextPressRef = useRef(false)
-  const ignorePressUntilRef = useRef(0)
-  const longPressTriggeredRef = useRef(false)
-  const [rotateMode, setRotateMode] = useState<RotateMode>('auto')
   const { width, height } = useWindowDimensions()
   const isLandscape = width > height
 
@@ -301,11 +320,12 @@ export default memo(({ componentId }: { componentId: string }) => {
   const shouldReduceMotion = reduceMotion
   const shouldUseLeanRendering = reduceMotion || projector || usePureBlackBackground
   const marqueeEnabled = marqueeMode && !shouldReduceMotion
-  const marqueeThemeBaseIndex = Math.max(MARQUEE_THEME_ORDER.indexOf(colorTheme), 0)
+  const marqueeThemeBaseIndex = Math.max(MARQUEE_THEME_ORDER.indexOf(marqueeBaseTheme), 0)
   const displayTheme = marqueeEnabled
-    ? MARQUEE_THEME_ORDER[(marqueeThemeBaseIndex + Math.max(activeIndex, 0)) % MARQUEE_THEME_ORDER.length]
+    ? MARQUEE_THEME_ORDER[(marqueeThemeBaseIndex + Math.floor(Math.max(activeIndex, 0) / marqueeSpeed)) % MARQUEE_THEME_ORDER.length]
     : colorTheme
   const themeColors = COLOR_THEMES[displayTheme]
+  const glowThemeColors = COLOR_THEMES[textGlowTheme]
   const isFocusMode = mode == 'singleLine' || mode == 'doubleLine' || mode == 'threeLine'
   const localMusicInfo = playMusicInfo.musicInfo && !('progress' in playMusicInfo.musicInfo) && playMusicInfo.musicInfo.source == 'local' && playMusicInfo.musicInfo.meta?.filePath
     ? playMusicInfo.musicInfo
@@ -314,6 +334,11 @@ export default memo(({ componentId }: { componentId: string }) => {
   const displayedSeekValue = isSeeking ? seekValue : nowPlayTime
   const displayedPlaybackRate = isPlaybackRateSliding ? playbackRateValue : Math.trunc(playbackRate * 100)
   const displayedPitch = isPitchSliding ? pitchValue : pitchSemitones
+  const radialLabelSize = Math.max(10, Math.min(13, width * 0.028))
+  const radialHintSize = Math.max(9, Math.min(11, width * 0.024))
+  const radialValueSize = Math.max(11, Math.min(13, width * 0.027))
+  const radialButtonTextSize = Math.max(11, Math.min(13, width * 0.028))
+
   const triggerButtonFeedback = () => {
     if (Platform.OS != 'android') return
     try {
@@ -324,12 +349,6 @@ export default memo(({ componentId }: { componentId: string }) => {
   const handleAction = (action: () => void) => {
     triggerButtonFeedback()
     action()
-  }
-
-  const clearLongPressTimer = () => {
-    if (!longPressTimerRef.current) return
-    clearTimeout(longPressTimerRef.current)
-    longPressTimerRef.current = null
   }
 
   const clearRadialHideTimer = () => {
@@ -352,7 +371,7 @@ export default memo(({ componentId }: { componentId: string }) => {
     setRadialMenu(prev => prev.visible ? { ...prev, visible: false } : prev)
   }
 
-  const showControls = (hideDelayMs: number = 1000) => {
+  const showControls = (hideDelayMs: number = CONTROL_IDLE_MS) => {
     setControlsVisible(true)
     void setImmersiveMode(true).catch(() => {})
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
@@ -382,7 +401,6 @@ export default memo(({ componentId }: { componentId: string }) => {
       subscription.remove()
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
       clearRadialHideTimer()
-      clearLongPressTimer()
       screenUnkeepAwake()
       void setScreenOrientation('auto').catch(() => {})
       void setImmersiveMode(false).catch(() => {})
@@ -419,8 +437,8 @@ export default memo(({ componentId }: { componentId: string }) => {
   }, [localMusicInfo])
 
   useEffect(() => {
-    void setScreenOrientation(rotateMode).catch(() => {})
-  }, [rotateMode])
+    void setScreenOrientation(orientationMode).catch(() => {})
+  }, [orientationMode])
 
   useEffect(() => {
     if (isFocusMode) return
@@ -437,79 +455,113 @@ export default memo(({ componentId }: { componentId: string }) => {
   const cycleMode = () => {
     const next = MODE_ORDER[(MODE_ORDER.indexOf(mode) + 1) % MODE_ORDER.length]
     updateSetting({ 'lyricStage.mode': next })
-    showControls(800)
+    showControls(CONTROL_IDLE_MS)
   }
 
   const setStageMode = (next: StageMode) => {
     updateSetting({ 'lyricStage.mode': next })
-    showControls(1200)
+    showControls(CONTROL_IDLE_MS)
   }
 
   const cycleMirror = () => {
     const next = MIRROR_ORDER[(MIRROR_ORDER.indexOf(mirror) + 1) % MIRROR_ORDER.length]
     updateSetting({ 'lyricStage.mirror': next })
-    showControls(800)
+    showControls(CONTROL_IDLE_MS)
+  }
+
+  const toggleOrientationMode = () => {
+    setOrientationMode(mode => mode == 'landscape' ? 'portrait' : 'landscape')
+    showControls(CONTROL_IDLE_MS)
   }
 
   const zoom = (delta: number) => {
     const next = Math.max(0.7, Math.min(1.8, parseFloat((fontScale + delta).toFixed(2))))
     updateSetting({ 'lyricStage.fontScale': next })
-    showControls(800)
+    showControls(CONTROL_IDLE_MS)
   }
 
   const toggleProjector = () => {
     updateSetting({ 'lyricStage.isProjectorMode': !projector })
-    showControls(800)
+    showControls(CONTROL_IDLE_MS)
   }
 
   const togglePureBlackBackground = () => {
     updateSetting({ 'lyricStage.usePureBlackBackground': !usePureBlackBackground })
-    showControls(800)
+    showControls(CONTROL_IDLE_MS)
   }
 
   const toggleReduceMotion = () => {
     updateSetting({ 'lyricStage.reduceMotion': !reduceMotion })
-    showControls(800)
+    showControls(CONTROL_IDLE_MS)
   }
 
   const toggleMarqueeMode = () => {
     updateSetting({ 'lyricStage.marqueeMode': !marqueeMode })
-    showControls(800)
+    showControls(CONTROL_IDLE_MS)
+  }
+
+  const cycleMarqueeBaseTheme = () => {
+    const next = MARQUEE_THEME_ORDER[(MARQUEE_THEME_ORDER.indexOf(marqueeBaseTheme) + 1) % MARQUEE_THEME_ORDER.length]
+    updateSetting({ 'lyricStage.marqueeBaseTheme': next })
+    showControls(CONTROL_IDLE_MS)
+  }
+
+  const cycleMarqueeSpeed = () => {
+    const order: MarqueeSpeed[] = [1, 2, 3]
+    const next = order[(order.indexOf(marqueeSpeed) + 1) % order.length]
+    updateSetting({ 'lyricStage.marqueeSpeed': next })
+    showControls(CONTROL_IDLE_MS)
   }
 
   const toggleTextStroke = () => {
     updateSetting({ 'lyricStage.textStroke': !textStroke })
-    showControls(800)
+    showControls(CONTROL_IDLE_MS)
+  }
+
+  const cycleTextGlowButton = () => {
+    if (!textGlow) {
+      updateSetting({ 'lyricStage.textGlow': true })
+      showControls(CONTROL_IDLE_MS)
+      return
+    }
+    const currentIndex = GLOW_THEME_ORDER.indexOf(textGlowTheme)
+    if (currentIndex < 0 || currentIndex == GLOW_THEME_ORDER.length - 1) {
+      updateSetting({ 'lyricStage.textGlow': false })
+    } else {
+      updateSetting({ 'lyricStage.textGlowTheme': GLOW_THEME_ORDER[currentIndex + 1] })
+    }
+    showControls(CONTROL_IDLE_MS)
+  }
+
+  const cycleTextGlowMode = () => {
+    const order: TextGlowMode[] = ['soft', 'sign']
+    const next = order[(order.indexOf(textGlowMode) + 1) % order.length]
+    updateSetting({ 'lyricStage.textGlowMode': next })
+    showControls(CONTROL_IDLE_MS)
   }
 
   const cycleColorTheme = () => {
     const order = Object.keys(COLOR_THEMES) as ColorTheme[]
     const next = order[(order.indexOf(colorTheme) + 1) % order.length]
     updateSetting({ 'lyricStage.colorTheme': next })
-    showControls(800)
+    showControls(CONTROL_IDLE_MS)
   }
 
   const cycleFont = () => {
     const next = FONT_OPTIONS[(FONT_OPTIONS.findIndex(option => option.value == fontFamily) + 1) % FONT_OPTIONS.length]
     updateSetting({ 'lyricStage.fontFamily': next.value })
-    showControls(800)
+    showControls(CONTROL_IDLE_MS)
   }
 
   const changeLineHeight = (delta: number) => {
     const next = Math.max(0.92, Math.min(3, parseFloat((lineHeightScale + delta).toFixed(2))))
     updateSetting({ 'lyricStage.lineHeightScale': next })
-    showControls(800)
-  }
-
-  const cycleRotate = () => {
-    const next = ROTATE_ORDER[(ROTATE_ORDER.indexOf(rotateMode) + 1) % ROTATE_ORDER.length]
-    setRotateMode(next)
-    showControls(800)
+    showControls(CONTROL_IDLE_MS)
   }
 
   const updateStageLayoutSetting = (setting: Partial<LX.AppSetting>) => {
     updateSetting(setting)
-    showControls(1200)
+    showControls(CONTROL_IDLE_MS)
   }
 
   const resetStageLayout = () => {
@@ -531,20 +583,9 @@ export default memo(({ componentId }: { componentId: string }) => {
         Vibration.vibrate(18)
       } catch {}
     }
-    longPressTriggeredRef.current = true
-    ignoreNextPressRef.current = true
-    ignorePressUntilRef.current = Date.now() + 900
     setRadialMenu({ visible: true, x: nextX, y: nextY })
-    showControls(2400)
-    clearRadialHideTimer()
-    radialHideTimerRef.current = setTimeout(() => {
-      radialHideTimerRef.current = null
-      setRadialMenu(prev => prev.visible ? { ...prev, visible: false } : prev)
-    }, RADIAL_MENU_IDLE_MS)
-  }
-
-  const openRadialMenu = (event: GestureResponderEvent) => {
-    openRadialMenuAt(event.nativeEvent.locationX, event.nativeEvent.locationY)
+    showControls(CONTROL_IDLE_MS)
+    scheduleRadialMenuHide(RADIAL_MENU_IDLE_MS)
   }
 
   const openRadialMenuByButton = () => {
@@ -567,7 +608,7 @@ export default memo(({ componentId }: { componentId: string }) => {
   }
 
   const openStageSettingPopup = () => {
-    showControls(2400)
+    showControls(CONTROL_IDLE_MS)
     if (stageSettingVisible) {
       stageSettingPopupRef.current?.setVisible(true)
       return
@@ -676,33 +717,16 @@ export default memo(({ componentId }: { componentId: string }) => {
     scheduleRadialMenuHide(hideDelayMs)
   }
 
-  const handleTouchStart = (event: GestureResponderEvent) => {
-    const { locationX, locationY } = event.nativeEvent
-    touchStartRef.current = { x: locationX, y: locationY }
-    longPressTriggeredRef.current = false
-    clearLongPressTimer()
-    longPressTimerRef.current = setTimeout(() => {
-      longPressTimerRef.current = null
-      openRadialMenuAt(locationX, locationY)
-    }, LONG_PRESS_MS)
+  const handleTouchStart = () => {
+    handlePointerActivity(CONTROL_IDLE_MS)
   }
 
-  const handleTouchMove = (event: GestureResponderEvent) => {
+  const handleTouchMove = () => {
     handlePointerActivity(POINTER_ACTIVITY_DELAY_MS)
-    const start = touchStartRef.current
-    if (!start) return
-    const dx = event.nativeEvent.locationX - start.x
-    const dy = event.nativeEvent.locationY - start.y
-    if (Math.hypot(dx, dy) > LONG_PRESS_MOVE_THRESHOLD) clearLongPressTimer()
   }
 
   const handleTouchEnd = () => {
-    clearLongPressTimer()
-    touchStartRef.current = null
-    if (longPressTriggeredRef.current) {
-      ignorePressUntilRef.current = Date.now() + 900
-      longPressTriggeredRef.current = false
-    }
+    handlePointerActivity(CONTROL_IDLE_MS)
   }
 
   const handleScrollToIndexFailed: FlatListType['onScrollToIndexFailed'] = info => {
@@ -727,8 +751,11 @@ export default memo(({ componentId }: { componentId: string }) => {
       reduceMotion={shouldReduceMotion}
       lineHeightScale={lineHeightScale}
       themeColors={themeColors}
+      glowThemeColors={glowThemeColors}
       mode={mode}
       textStroke={textStroke}
+      textGlow={textGlow}
+      textGlowMode={textGlowMode}
     />
   )
 
@@ -739,30 +766,28 @@ export default memo(({ componentId }: { componentId: string }) => {
   return (
     <PageContent>
       <RNStatusBar hidden={true} translucent={true} backgroundColor="transparent" barStyle="light-content" />
-      <TouchableOpacity
-        activeOpacity={1}
+      <View
         style={styles.page}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
-        onPress={() => {
-          if (Date.now() < ignorePressUntilRef.current) return
-          if (ignoreNextPressRef.current) {
-            ignoreNextPressRef.current = false
-            return
-          }
-          if (!controlsVisible) {
-            showControls(1600)
-            return
-          }
-          if (radialMenu.visible) {
-            closeRadialMenu()
-            return
-          }
-        }}
       >
-        <View style={[styles.page, { backgroundColor: pageBackground }]}>
+        <TouchableOpacity
+          activeOpacity={1}
+          style={[styles.page, { backgroundColor: pageBackground }]}
+          onPress={() => {
+            if (!controlsVisible) {
+              showControls(CONTROL_IDLE_MS)
+              return
+            }
+            if (radialMenu.visible) {
+              closeRadialMenu()
+              return
+            }
+            showControls(CONTROL_IDLE_MS)
+          }}
+        >
           <View style={[styles.content, { transform: [{ translateY: layoutContentOffset }, ...(transformStyle?.transform ?? [])] }]}>
             {
               isFocusMode
@@ -776,11 +801,11 @@ export default memo(({ componentId }: { componentId: string }) => {
                     reduceMotion={shouldReduceMotion}
                     lineHeightScale={lineHeightScale}
                     themeColors={themeColors}
+                    glowThemeColors={glowThemeColors}
                     mode={mode}
                     textStroke={textStroke}
-                    onTouchStart={handleTouchStart}
-                    onTouchMove={handleTouchMove}
-                    onTouchEnd={handleTouchEnd}
+                    textGlow={textGlow}
+                    textGlowMode={textGlowMode}
                   />
                 )
                 : (
@@ -855,6 +880,12 @@ export default memo(({ componentId }: { componentId: string }) => {
                       <TouchableOpacity style={[styles.actionBtn, isLandscape ? styles.actionBtnLandscapeThird : styles.actionBtnHalf, { backgroundColor: themeColors.accent }]} onPress={() => { handleAction(toggleTextStroke) }}>
                         <Text color="#f6f6f6" size={13}>{textStroke ? '描边:开' : '描边:关'}</Text>
                       </TouchableOpacity>
+                      <TouchableOpacity style={[styles.actionBtn, isLandscape ? styles.actionBtnLandscapeThird : styles.actionBtnHalf, { backgroundColor: textGlow ? glowThemeColors.accent : themeColors.accent }]} onPress={() => { handleAction(cycleTextGlowButton) }}>
+                        <Text color="#f6f6f6" size={13}>{textGlow ? `辉光灯:${GLOW_THEME_LABELS[textGlowTheme]}` : '辉光灯:关'}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.actionBtn, isLandscape ? styles.actionBtnLandscapeThird : styles.actionBtnHalf, { backgroundColor: themeColors.accent }]} onPress={() => { handleAction(openRadialMenuByButton) }}>
+                        <Text color="#f6f6f6" size={13}>圆盘菜单</Text>
+                      </TouchableOpacity>
                     </View>
                     <Text style={styles.panelLabel} color="rgba(255,255,255,0.58)" size={11}>字号与排版</Text>
                     <View style={styles.controlGrid}>
@@ -873,11 +904,8 @@ export default memo(({ componentId }: { componentId: string }) => {
                     </View>
                     <Text style={styles.panelLabel} color="rgba(255,255,255,0.58)" size={11}>舞台</Text>
                     <View style={styles.controlGrid}>
-                      <TouchableOpacity style={[styles.actionBtn, isLandscape ? styles.actionBtnLandscapeThird : styles.actionBtnThird, { backgroundColor: themeColors.accent }]} onPress={() => { handleAction(openRadialMenuByButton) }}>
-                        <Text color="#f6f6f6" size={13}>圆盘菜单</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={[styles.actionBtn, isLandscape ? styles.actionBtnLandscapeThird : styles.actionBtnThird, { backgroundColor: themeColors.accent }]} onPress={() => { handleAction(cycleRotate) }}>
-                        <Text color="#f6f6f6" size={13}>{ROTATE_LABELS[rotateMode]}</Text>
+                      <TouchableOpacity style={[styles.actionBtn, isLandscape ? styles.actionBtnLandscapeThird : styles.actionBtnThird, { backgroundColor: themeColors.accent }]} onPress={() => { handleAction(toggleOrientationMode) }}>
+                        <Text color="#f6f6f6" size={13}>{orientationMode == 'landscape' ? '切到竖屏' : '切到横屏'}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={[styles.actionBtn, isLandscape ? styles.actionBtnLandscapeThird : styles.actionBtnThird, { backgroundColor: themeColors.accent }]} onPress={() => { handleAction(openStageSettingPopup) }}>
                         <Text color="#f6f6f6" size={13}>高级设置</Text>
@@ -919,7 +947,7 @@ export default memo(({ componentId }: { componentId: string }) => {
                       onPress={() => { handleRadialAction(openKtvPopup) }}
                     >
                       <Icon name="album" color="#f6f6f6" size={20} />
-                      <Text color="#f6f6f6" size={10}>KTV</Text>
+                      <Text color="#f6f6f6" size={radialLabelSize}>KTV</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[
@@ -954,14 +982,14 @@ export default memo(({ componentId }: { componentId: string }) => {
                     >
                       <Icon name={isPlay ? 'pause' : 'play'} color={pageBackground} size={22} />
                     </TouchableOpacity>
-                    <Text style={styles.radialHint} color="rgba(255,255,255,0.72)" size={10}>
-                      长按快捷切歌
+                    <Text style={styles.radialHint} color="rgba(255,255,255,0.72)" size={radialHintSize}>
+                      按键呼出圆盘
                     </Text>
                   </View>
                   <View style={[styles.radialPanel, { borderColor: themeColors.accent, backgroundColor: 'rgba(0,0,0,0.72)' }]} onStartShouldSetResponder={() => true}>
                     <View style={styles.radialPanelRow}>
-                      <Text color="#f6f6f6" size={11}>进度</Text>
-                      <Text color="rgba(255,255,255,0.72)" size={11}>
+                      <Text color="#f6f6f6" size={radialValueSize}>进度</Text>
+                      <Text color="rgba(255,255,255,0.72)" size={radialValueSize}>
                         {`${formatPlayTime2(displayedSeekValue)} / ${formatPlayTime2(maxPlayTime)}`}
                       </Text>
                     </View>
@@ -986,18 +1014,18 @@ export default memo(({ componentId }: { componentId: string }) => {
                       />
                     </View>
                     <View style={styles.radialPanelRow}>
-                      <Text color="#f6f6f6" size={11}>倍速</Text>
-                      <Text color="rgba(255,255,255,0.72)" size={11}>{`${(displayedPlaybackRate / 100).toFixed(2)}x`}</Text>
+                      <Text color="#f6f6f6" size={radialValueSize}>倍速</Text>
+                      <Text color="rgba(255,255,255,0.72)" size={radialValueSize}>{`${(displayedPlaybackRate / 100).toFixed(2)}x`}</Text>
                     </View>
                     <View style={styles.pitchButtonRow}>
                       <TouchableOpacity style={styles.pitchButton} onPress={() => { stepPlaybackRateValue(-10) }}>
-                        <Text color="#f6f6f6" size={12}>-0.1</Text>
+                        <Text color="#f6f6f6" size={radialButtonTextSize}>-0.1</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={styles.pitchButton} onPress={() => { applyPlaybackRateValue(100) }}>
-                        <Text color="#f6f6f6" size={12}>复位</Text>
+                        <Text color="#f6f6f6" size={radialButtonTextSize}>复位</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={styles.pitchButton} onPress={() => { stepPlaybackRateValue(10) }}>
-                        <Text color="#f6f6f6" size={12}>+0.1</Text>
+                        <Text color="#f6f6f6" size={radialButtonTextSize}>+0.1</Text>
                       </TouchableOpacity>
                     </View>
                     <Slider
@@ -1017,18 +1045,18 @@ export default memo(({ componentId }: { componentId: string }) => {
                       step={10}
                     />
                     <View style={styles.radialPanelRow}>
-                      <Text color="#f6f6f6" size={11}>变调</Text>
-                      <Text color="rgba(255,255,255,0.72)" size={11}>{`${displayedPitch > 0 ? '+' : ''}${displayedPitch} st`}</Text>
+                      <Text color="#f6f6f6" size={radialValueSize}>变调</Text>
+                      <Text color="rgba(255,255,255,0.72)" size={radialValueSize}>{`${displayedPitch > 0 ? '+' : ''}${displayedPitch} st`}</Text>
                     </View>
                     <View style={styles.pitchButtonRow}>
                       <TouchableOpacity style={styles.pitchButton} onPress={() => { stepPitchValue(-1) }}>
-                        <Text color="#f6f6f6" size={12}>-1</Text>
+                        <Text color="#f6f6f6" size={radialButtonTextSize}>-1</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={styles.pitchButton} onPress={() => { applyPitchValue(0) }}>
-                        <Text color="#f6f6f6" size={12}>复位</Text>
+                        <Text color="#f6f6f6" size={radialButtonTextSize}>复位</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={styles.pitchButton} onPress={() => { stepPitchValue(1) }}>
-                        <Text color="#f6f6f6" size={12}>+1</Text>
+                        <Text color="#f6f6f6" size={radialButtonTextSize}>+1</Text>
                       </TouchableOpacity>
                     </View>
                     <Slider
@@ -1052,8 +1080,8 @@ export default memo(({ componentId }: { componentId: string }) => {
               )
               : null
           }
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
       {
         stageSettingVisible
           ? (
@@ -1105,6 +1133,26 @@ export default memo(({ componentId }: { componentId: string }) => {
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.settingChip, reduceMotion ? styles.settingChipActive : null]} onPress={() => { handleAction(toggleReduceMotion) }}>
                       <Text color="#f6f6f6" size={13}>{reduceMotion ? '低耗模式:开' : '低耗模式:关'}</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={styles.settingSectionTitle}>跑马灯与辉光</Text>
+                  <Text style={styles.settingSectionTip}>跑马灯会按歌词推进切换配色。速度越快，每句歌词切色越频繁；辉光会让文字更像夜间霓虹广告牌。</Text>
+                  <View style={styles.settingOptionGrid}>
+                    <TouchableOpacity style={[styles.settingChip, marqueeMode ? styles.settingChipActive : null]} onPress={() => { handleAction(toggleMarqueeMode) }}>
+                      <Text color="#f6f6f6" size={13}>{marqueeMode ? '跑马灯:开' : '跑马灯:关'}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.settingChip} onPress={() => { handleAction(cycleMarqueeBaseTheme) }}>
+                      <Text color="#f6f6f6" size={13}>{`起始色:${COLOR_THEMES[marqueeBaseTheme].label}`}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.settingChip} onPress={() => { handleAction(cycleMarqueeSpeed) }}>
+                      <Text color="#f6f6f6" size={13}>{`切换速度:${MARQUEE_SPEED_LABELS[marqueeSpeed]}`}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.settingChip, textGlow ? styles.settingChipActive : null]} onPress={() => { handleAction(cycleTextGlowButton) }}>
+                      <Text color="#f6f6f6" size={13}>{textGlow ? `文字辉光:${GLOW_THEME_LABELS[textGlowTheme]}` : '文字辉光:关'}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.settingChip} onPress={() => { handleAction(cycleTextGlowMode) }}>
+                      <Text color="#f6f6f6" size={13}>{`辉光风格:${TEXT_GLOW_MODE_LABELS[textGlowMode]}`}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1171,18 +1219,6 @@ const styles = createStyle({
   lineWrap: {
     paddingVertical: 2,
     alignItems: 'center',
-  },
-  lineWrapProjector: {
-    marginHorizontal: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.24)',
-  },
-  lineWrapProjectorActive: {
-    backgroundColor: 'rgba(0,0,0,0.44)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
   },
   lineWrapActive: {
     paddingVertical: 6,

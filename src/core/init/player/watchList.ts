@@ -2,6 +2,7 @@ import { playNext } from '@/core/player/player'
 import { updatePlayIndex } from '@/core/player/playInfo'
 import { throttleBackgroundTimer } from '@/utils/tools'
 import playerState from '@/store/player/state'
+import { LIST_IDS } from '@/config/constant'
 
 const changedListIds = new Set<string | null>()
 
@@ -13,6 +14,14 @@ export default () => {
 
     const { playIndex } = updatePlayIndex()
     if (playIndex < 0) { // 歌曲被移除
+      const currentMusicInfo = playerState.playMusicInfo.musicInfo
+      const isLocalFolderBrowsingChange =
+        playerState.playInfo.playerListId == LIST_IDS.LOCAL_MUSIC &&
+        playerState.playMusicInfo.listId == LIST_IDS.LOCAL_MUSIC &&
+        !!currentMusicInfo &&
+        !('progress' in currentMusicInfo) &&
+        currentMusicInfo.source == 'local'
+      if (isLocalFolderBrowsingChange) return
       // if (global.lx.isPlayedStop) {
       //   stop()
       //   setTimeout(() => {

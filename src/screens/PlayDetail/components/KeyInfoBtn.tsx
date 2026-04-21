@@ -5,9 +5,12 @@ import Text from '@/components/common/Text'
 import { BorderWidths } from '@/theme'
 import { useTheme } from '@/store/theme/hook'
 import { usePlayMusicInfo } from '@/store/player/hook'
+import settingState from '@/store/setting/state'
 import { scaleSizeW } from '@/utils/pixelRatio'
 import { createStyle, toast } from '@/utils/tools'
 import { getCachedMusicProfile, getMusicProfile, getMusicProfilePath, type MusicProfile } from '@/core/musicProfile'
+import { getMusicUrl as getOnlineMusicUrl } from '@/core/music/online'
+import { downloadFile, existsFile, mkdir, temporaryDirectoryPath } from '@/utils/fs'
 import SettingPitch from './SettingPopup/settings/SettingPitch'
 import SettingPlaybackRate from './SettingPopup/settings/SettingPlaybackRate'
 import ButtonPrimary from '@/components/common/ButtonPrimary'
@@ -26,6 +29,14 @@ const BTN_SIZES = {
 } as const
 const ANALYZE_MAX_MS = 90_000
 const ANALYZE_TICK_MS = 250
+const ONLINE_PROFILE_DIR = `${temporaryDirectoryPath}/lxmusic_profile_cache`
+
+const sanitizeName = (name: string) => name.replace(/[\\/:*?"<>|]/g, '_').trim() || `track_${Date.now()}`
+
+const getOnlineAnalyzePath = (musicInfo: LX.Music.MusicInfo) => {
+  const ext = musicInfo.source == 'local' ? musicInfo.meta.ext.trim() || 'mp3' : 'mp3'
+  return `${ONLINE_PROFILE_DIR}/${sanitizeName(`${musicInfo.source}_${musicInfo.id}_${musicInfo.name}_${musicInfo.singer}`)}.${ext}`
+}
 
 export default memo(({ direction }: {
   direction: 'vertical' | 'horizontal'
@@ -38,15 +49,20 @@ export default memo(({ direction }: {
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [etaMs, setEtaMs] = useState(0)
+  const [onlineAnalyzePath, setOnlineAnalyzePath] = useState('')
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const mountedRef = useRef(true)
   const musicInfo = playMusicInfo.musicInfo && !('progress' in playMusicInfo.musicInfo) ? playMusicInfo.musicInfo : null
-  const profilePath = useMemo(() => getMusicProfilePath(musicInfo), [musicInfo])
+  const profilePath = useMemo(() => getMusicProfilePath(musicInfo) || onlineAnalyzePath, [musicInfo, onlineAnalyzePath])
   const latestProfilePathRef = useRef(profilePath)
 
   useEffect(() => {
     latestProfilePathRef.current = profilePath
   }, [profilePath])
+
+  useEffect(() => {
+    setOnlineAnalyzePath('')
+  }, [musicInfo?.id])
 
   useEffect(() => {
     let canceled = false
@@ -74,13 +90,31 @@ export default memo(({ direction }: {
   const label = loading ? '分析中' : profile?.majorKey || '调号'
   const bpmText = profile ? `${Math.round(profile.bpm)} BPM` : '未分析'
 
-  const handleAnalyze = () => {
-    if (!profilePath) {
-      toast('仅本地歌曲支持分析并写入 LRC')
-      return
+  const ensureAnalyzePath = async() => {
+    const localPath = getMusicProfilePath(musicInfo)
+    if (localPath) return localPath
+    const onlineMusicInfo = musicInfo as LX.Music.MusicInfoOnline
+    await mkdir(ONLINE_PROFILE_DIR).catch(() => {})
+    const tempPath = getOnlineAnalyzePath(musicInfo)
+    if (!await existsFile(tempPath).catch(() => false)) {
+      const url = await getOnlineMusicUrl({
+        musicInfo: onlineMusicInfo,
+        quality: settingState.setting['player.playQuality'],
+        isRefresh: true,
+        allowToggleSource: true,
+        onToggleSource: () => {},
+      })
+      await downloadFile(url, tempPath, {
+        connectionTimeout: 20000,
+        readTimeout: 30000,
+      }).promise
     }
+    setOnlineAnalyzePath(tempPath)
+    return tempPath
+  }
+
+  const handleAnalyze = () => {
     if (loading) return
-    const taskPath = profilePath
     setLoading(true)
     setProgress(0.02)
     setEtaMs(ANALYZE_MAX_MS)
@@ -92,23 +126,25 @@ export default memo(({ direction }: {
       setProgress(nextProgress)
       setEtaMs(Math.max(0, ANALYZE_MAX_MS - elapsed))
     }, ANALYZE_TICK_MS)
-    void getMusicProfile(taskPath).then(result => {
+    void ensureAnalyzePath().then(async taskPath => {
+      latestProfilePathRef.current = taskPath
+      const result = await getMusicProfile(taskPath)
       if (!mountedRef.current || latestProfilePathRef.current != taskPath) return
       if (timerRef.current) clearInterval(timerRef.current)
       timerRef.current = null
       setProgress(1)
       setEtaMs(0)
       setProfile(result)
-      toast('分析完成，结果已写入歌词/缓存')
+      toast(getMusicProfilePath(musicInfo) ? '分析完成，结果已写入歌词/缓存' : '分析完成，已缓存在线歌曲调号')
     }).catch(err => {
-      if (!mountedRef.current || latestProfilePathRef.current != taskPath) return
+      if (!mountedRef.current) return
       if (timerRef.current) clearInterval(timerRef.current)
       timerRef.current = null
       setProgress(0)
       setEtaMs(0)
       toast((err as Error).message || '调号分析失败')
     }).finally(() => {
-      if (!mountedRef.current || latestProfilePathRef.current != taskPath) return
+      if (!mountedRef.current) return
       setLoading(false)
     })
   }

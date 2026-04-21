@@ -287,9 +287,34 @@ declare global {
       'lyricStage.marqueeMode': boolean
 
       /**
+       * 舞台歌词跑马灯起始色
+       */
+      'lyricStage.marqueeBaseTheme': 'emerald' | 'amber' | 'ice' | 'rose' | 'gold' | 'cyan' | 'lime' | 'sunset' | 'arctic' | 'mono'
+
+      /**
+       * 舞台歌词跑马灯切换速度
+       */
+      'lyricStage.marqueeSpeed': 1 | 2 | 3
+
+      /**
        * 舞台歌词文字描边
        */
       'lyricStage.textStroke': boolean
+
+      /**
+       * 舞台歌词文字辉光
+       */
+      'lyricStage.textGlow': boolean
+
+      /**
+       * 舞台歌词辉光颜色
+       */
+      'lyricStage.textGlowTheme': 'emerald' | 'gold' | 'rose'
+
+      /**
+       * 舞台歌词辉光风格
+       */
+      'lyricStage.textGlowMode': 'soft' | 'sign'
 
       /**
        * 舞台歌词顶部工具栏偏移

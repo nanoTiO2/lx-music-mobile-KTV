@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ScrollView, StyleSheet, View } from 'react-native'
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native'
 import Button from '@/components/common/Button'
 import Text from '@/components/common/Text'
 import FileSelect from '@/components/common/FileSelect'
@@ -9,12 +9,15 @@ import {
   getDefaultDownloadSaveDir,
   getDownloadSaveDir,
   getDownloadTasks,
+  importDownloadedMusicToDownloadList,
   pauseDownloadTask,
   removeDownloadTask,
   resetDownloadSaveDir,
   setDownloadSaveDir,
   startDownloadTask,
 } from '@/core/download'
+import { playListById } from '@/core/player/player'
+import { LIST_IDS } from '@/config/constant'
 
 
 const TEXT = {
@@ -38,18 +41,19 @@ const TEXT = {
   retry: '\u91cd\u8bd5',
   done: '\u5220\u9664',
   start: '\u5f00\u59cb',
+  play: '\u64ad\u653e',
 }
 
 const getActionLabel = (status) => {
   switch (status) {
     case 'run':
       return TEXT.pause
+    case 'completed':
+      return TEXT.play
     case 'pause':
       return TEXT.resume
     case 'error':
       return TEXT.retry
-    case 'completed':
-      return TEXT.done
     case 'waiting':
     default:
       return TEXT.start
@@ -105,7 +109,7 @@ export default () => {
         pauseDownloadTask(task.id).catch(() => {})
         break
       case 'completed':
-        removeDownloadTask(task.id).catch(() => {})
+        handlePlay(task)
         break
       case 'pause':
       case 'error':
@@ -121,6 +125,21 @@ export default () => {
 
   const handleDelete = (taskId) => {
     removeDownloadTask(taskId).catch(() => {})
+  }
+
+  const handlePlay = (task) => {
+    const filePath = task.metadata.filePath?.trim()
+    if (!filePath) {
+      toast('下载文件路径为空', 'long')
+      return
+    }
+    importDownloadedMusicToDownloadList(filePath).then((musicInfo) => {
+      if (!musicInfo) throw new Error('下载文件还未完成入库，请稍后再试')
+      return playListById(LIST_IDS.DOWNLOAD, musicInfo.id)
+    }).catch((err) => {
+      const message = err instanceof Error ? err.message : '播放失败'
+      toast(message, 'long')
+    })
   }
 
   return (
@@ -152,7 +171,14 @@ export default () => {
           {
             tasks.length
               ? tasks.map(task => (
-                <View key={task.id} style={styles.taskItem}>
+                <TouchableOpacity
+                  key={task.id}
+                  activeOpacity={task.status === 'completed' ? 0.75 : 1}
+                  style={styles.taskItem}
+                  onPress={() => {
+                    if (task.status === 'completed') handlePlay(task)
+                  }}
+                >
                   <Text numberOfLines={1} style={styles.taskTitle}>
                     {task.metadata.musicInfo.name} - {task.metadata.musicInfo.singer}
                   </Text>
@@ -166,15 +192,11 @@ export default () => {
                     <Button style={styles.taskActionBtn} onPress={() => { handlePrimaryAction(task) }}>
                       <Text>{getActionLabel(task.status)}</Text>
                     </Button>
-                    {
-                      task.status !== 'completed'
-                        ? <Button style={styles.taskActionBtn} onPress={() => { handleDelete(task.id) }}>
-                            <Text>{TEXT.remove}</Text>
-                          </Button>
-                        : null
-                    }
+                    <Button style={styles.taskActionBtn} onPress={() => { handleDelete(task.id) }}>
+                      <Text>{TEXT.remove}</Text>
+                    </Button>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))
               : <Text style={styles.empty}>{TEXT.noTasks}</Text>
           }

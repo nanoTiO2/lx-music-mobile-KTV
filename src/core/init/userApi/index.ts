@@ -8,10 +8,38 @@ import { addUserApi, getUserApiList } from '@/utils/data'
 import { confirmDialog, openUrl, tipDialog } from '@/utils/tools'
 import { getData, saveData } from '@/plugins/storage'
 import { DEFAULT_USER_API_NAME, getDefaultUserApiScript } from '@/config/defaultUserApiScript'
+import { BUILTIN_USER_API_PRESETS } from '@/config/builtinUserApiPresets'
 
 const DEFAULT_USER_API_INIT_FLAG = '@default_user_api_init_v4'
-const ensureDefaultUserApi = async(setting: LX.AppSetting) => {
+const getUserApiNameFromScript = (script: string) => {
+  const header = /^\/\*[\S\s]+?\*\//.exec(script)?.[0]
+  if (!header) return ''
+  return /^\s?\*\s?@name\s(.+)$/m.exec(header)?.[1]?.trim() ?? ''
+}
+
+const ensureBuiltinUserApis = async() => {
   let userApiList = await getUserApiList()
+  const userApiNames = new Set(userApiList.map(api => api.name))
+  let hasUpdates = false
+
+  for (const preset of BUILTIN_USER_API_PRESETS) {
+    const name = getUserApiNameFromScript(preset.script)
+    if (!name || userApiNames.has(name)) continue
+    await addUserApi(preset.script)
+    userApiNames.add(name)
+    hasUpdates = true
+  }
+
+  if (hasUpdates) {
+    userApiList = await getUserApiList()
+    setUserApiList(userApiList)
+  }
+
+  return userApiList
+}
+
+const ensureDefaultUserApi = async(setting: LX.AppSetting, initialUserApiList?: LX.UserApi.UserApiInfo[]) => {
+  let userApiList = initialUserApiList ?? await getUserApiList()
   let targetApi = userApiList.find(api => api.name == DEFAULT_USER_API_NAME)
 
   if (!targetApi) {
@@ -24,7 +52,7 @@ const ensureDefaultUserApi = async(setting: LX.AppSetting) => {
   const currentSource = setting['common.apiSource']
   const isCurrentUserApiExists = /^user_api/.test(currentSource) && userApiList.some(api => api.id == currentSource)
 
-  if (!inited || !currentSource || (/^user_api/.test(currentSource) && !isCurrentUserApiExists)) {
+  if (!currentSource || (/^user_api/.test(currentSource) && !isCurrentUserApiExists)) {
     setting['common.apiSource'] = targetApi.id
     updateSetting({ 'common.apiSource': targetApi.id })
   }
@@ -277,6 +305,7 @@ export default async(setting: LX.AppSetting) => {
     }
   })
 
-  setUserApiList(await getUserApiList())
-  await ensureDefaultUserApi(setting)
+  const userApiList = await ensureBuiltinUserApis()
+  setUserApiList(userApiList)
+  await ensureDefaultUserApi(setting, userApiList)
 }

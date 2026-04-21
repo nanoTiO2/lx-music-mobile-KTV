@@ -15,6 +15,9 @@ import { createStyle, toast } from '@/utils/tools'
 import { scanAudioFolderGroups, type AudioFolderGroup } from '@/utils/localMediaMetadata'
 import { BorderWidths } from '@/theme'
 import { useTheme } from '@/store/theme/hook'
+import playerState from '@/store/player/state'
+import { getListMusicSync, setMusicList } from '@/utils/listManage'
+import { setPlayListId, setPlayMusicInfo } from '@/core/player/playInfo'
 
 const normalizeDirPaths = (paths: string[]) => [...new Set(paths.map(path => path.trim()).filter(Boolean))]
 const getFolderGroupLabel = (group: AudioFolderGroup) => {
@@ -25,6 +28,7 @@ const getFolderGroupLabel = (group: AudioFolderGroup) => {
 let localMusicScannedDirsSignatureCache = ''
 let localMusicScannedGroupsCache: AudioFolderGroup[] = []
 let localMusicImportedFolderSignatureCache = ''
+const LOCAL_PLAYBACK_SNAPSHOT_ID = '__local_playback_snapshot__'
 
 export default () => {
   const t = useI18n()
@@ -74,8 +78,28 @@ export default () => {
     })
   }
 
+  const freezeCurrentLocalPlaybackContext = async(nextGroup: AudioFolderGroup | undefined) => {
+    const currentPlayMusic = playerState.playMusicInfo.musicInfo
+    if (
+      playerState.playInfo.playerListId != LIST_IDS.LOCAL_MUSIC ||
+      playerState.playMusicInfo.listId != LIST_IDS.LOCAL_MUSIC ||
+      !currentPlayMusic ||
+      'progress' in currentPlayMusic ||
+      currentPlayMusic.source != 'local'
+    ) return
+    const currentFilePath = currentPlayMusic.meta.filePath
+    if (!currentFilePath) return
+    if (nextGroup?.files.some(file => file.path == currentFilePath)) return
+    const currentLocalList = getListMusicSync(LIST_IDS.LOCAL_MUSIC)
+    if (!currentLocalList.length) return
+    setMusicList(LOCAL_PLAYBACK_SNAPSHOT_ID, [...currentLocalList])
+    setPlayListId(LOCAL_PLAYBACK_SNAPSHOT_ID)
+    setPlayMusicInfo(LIST_IDS.LOCAL_MUSIC, currentPlayMusic)
+  }
+
   const applyFolderSelection = async(groups: AudioFolderGroup[], preferredPath?: string) => {
     const nextGroup = groups.find(group => group.dirPath == preferredPath) ?? groups[0]
+    await freezeCurrentLocalPlaybackContext(nextGroup)
     setSelectedFolderPath(nextGroup?.dirPath ?? '')
     setActiveList(LIST_IDS.LOCAL_MUSIC)
     const importSignature = `${nextGroup?.dirPath ?? ''}__${nextGroup?.files.length ?? 0}`

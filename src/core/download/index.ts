@@ -17,6 +17,17 @@ const DEFAULT_DOWNLOAD_DIR = `${externalStorageDirectoryPath}/Download/lxmusic`
 const INVALID_PATH_CHAR_RXP = /[\\/:*?"<>|]/g
 const ACTIVE_DOWNLOAD_JOBS = new Map<string, number>()
 
+const ensureDownloadDirMappedToLocalMusic = (dir: string) => {
+  const normalizedDir = dir.trim()
+  if (!normalizedDir) return
+  const importDirs = settingState.setting['list.importMusicDirs'] ?? []
+  if (importDirs.includes(normalizedDir)) return
+  updateSetting({
+    'list.importMusicDirs': [...importDirs, normalizedDir],
+    'list.importMusicDir': settingState.setting['list.importMusicDir'] || normalizedDir,
+  })
+}
+
 const sanitizeFileName = (name: string) => {
   return name.replace(INVALID_PATH_CHAR_RXP, '_').trim() || `music_${Date.now()}`
 }
@@ -77,7 +88,7 @@ const buildLocalMusicInfo = (filePath: string, metadata: {
   }
 }
 
-const importDownloadedMusicToDownloadList = async(filePath: string) => {
+export const importDownloadedMusicToDownloadList = async(filePath: string) => {
   const metadata = await readMetadata(filePath)
   if (!metadata) return null
   const musicInfo = buildLocalMusicInfo(filePath, metadata)
@@ -122,6 +133,7 @@ export const getDownloadSaveDir = () => {
 }
 
 export const setDownloadSaveDir = (dir: string) => {
+  ensureDownloadDirMappedToLocalMusic(dir)
   updateSetting({
     'download.saveDir': dir,
     'download.useCustomDir': true,
@@ -129,6 +141,7 @@ export const setDownloadSaveDir = (dir: string) => {
 }
 
 export const resetDownloadSaveDir = () => {
+  ensureDownloadDirMappedToLocalMusic(DEFAULT_DOWNLOAD_DIR)
   updateSetting({
     'download.saveDir': '',
     'download.useCustomDir': false,
@@ -136,6 +149,7 @@ export const resetDownloadSaveDir = () => {
 }
 
 export const ensureDownloadSaveDir = async(dir = getDownloadSaveDir()) => {
+  ensureDownloadDirMappedToLocalMusic(dir)
   if (!await existsFile(dir)) await mkdir(dir)
   return dir
 }
@@ -227,7 +241,7 @@ export const clearCompletedDownloadTasks = async() => {
 const resolveTaskLyricText = async(task: LX.Download.ListItem) => {
   for (const isRefresh of [false, true]) {
     try {
-      const { lyricInfo } = await getOnlineLyricInfo({
+      const lyricInfo = await getOnlineLyricInfo({
         musicInfo: task.metadata.musicInfo,
         isRefresh,
       })

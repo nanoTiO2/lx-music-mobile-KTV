@@ -3,7 +3,12 @@ import listAction from '@/store/list/action'
 import listState from '@/store/list/state'
 import settingState from '@/store/setting/state'
 import { fixNewMusicInfoQuality } from '@/utils'
+import playerState from '@/store/player/state'
 import { saveListPrevSelectId } from '@/utils/data'
+import { setMusicList } from '@/utils/listManage'
+
+const TEMP_PLAYLIST_PREFIX = '__temp_playback__'
+const getTempPlaybackSnapshotId = (id: string) => `${TEMP_PLAYLIST_PREFIX}${id || 'default'}`
 
 /**
  * 覆盖全部列表数据
@@ -171,6 +176,11 @@ export const setUserList = (lists: LX.List.UserListInfo[]) => {
 export const setTempList = async(id: string, list: LX.Music.MusicInfoOnline[]) => {
   await overwriteListMusics(LIST_IDS.TEMP, list)
   listAction.setTempListMeta({ id })
+  setMusicList(id, [...list])
+  const playbackSnapshotId = getTempPlaybackSnapshotId(id)
+  if (playerState.playInfo.playerListId == playbackSnapshotId) {
+    setMusicList(playbackSnapshotId, [...list])
+  }
 }
 
 
