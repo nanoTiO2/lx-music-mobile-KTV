@@ -15,7 +15,7 @@ import { playHaptic } from '@/utils/haptics'
 const PrevBtn = ({ size }: { size: number }) => {
   const theme = useTheme()
   const handlePlayPrev = () => {
-    playHaptic('next')
+    playHaptic('prev')
     void playPrev()
   }
   return (

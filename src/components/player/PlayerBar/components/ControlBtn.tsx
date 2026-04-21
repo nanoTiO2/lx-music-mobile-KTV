@@ -9,7 +9,7 @@ import { playHaptic } from '@/utils/haptics'
 
 const BTN_SIZE = 24
 const handlePlayPrev = () => {
-  playHaptic('next')
+  playHaptic('prev')
   void playPrev()
 }
 const handlePlayNext = () => {

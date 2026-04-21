@@ -539,16 +539,32 @@ public class UtilsModule extends ReactContextBaseJavaModule {
 
   private long[] buildHapticPattern(String kind) {
     switch (kind) {
+      case "song":
+        return new long[] { 0L, 10L, 12L, 16L };
       case "play":
         return new long[] { 0L, 18L, 18L, 10L };
       case "pause":
-        return new long[] { 0L, 18L, 26L, 18L };
+        return new long[] { 0L, 18L, 28L, 22L };
+      case "prev":
+        return new long[] { 0L, 18L, 20L, 10L };
       case "next":
-        return new long[] { 0L, 14L, 16L, 18L };
+        return new long[] { 0L, 10L, 14L, 18L };
       case "success":
         return new long[] { 0L, 18L, 18L, 22L };
       case "drag":
         return new long[] { 0L, 8L };
+      case "dragCommit":
+        return new long[] { 0L, 10L, 12L, 10L };
+      case "modeListLoop":
+        return new long[] { 0L, 10L, 16L, 10L };
+      case "modeRandom":
+        return new long[] { 0L, 10L, 10L, 10L, 10L, 14L };
+      case "modeOrder":
+        return new long[] { 0L, 16L };
+      case "modeSingleLoop":
+        return new long[] { 0L, 10L, 14L, 18L };
+      case "modeSingle":
+        return new long[] { 0L, 24L };
       case "selection":
       default:
         return new long[] { 0L, 14L };

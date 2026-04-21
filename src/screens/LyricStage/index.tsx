@@ -996,7 +996,7 @@ export default memo(({ componentId }: { componentId: string }) => {
                         { backgroundColor: 'rgba(255,255,255,0.16)' },
                       ]}
                       activeOpacity={0.88}
-                      onPress={() => { handleRadialAction(() => { void playPrev() }) }}
+                      onPress={() => { playHaptic('prev'); handleRadialAction(() => { void playPrev() }) }}
                     >
                       <Icon name="prevMusic" color="#f6f6f6" size={20} />
                     </TouchableOpacity>
@@ -1007,7 +1007,7 @@ export default memo(({ componentId }: { componentId: string }) => {
                         { backgroundColor: 'rgba(255,255,255,0.16)' },
                       ]}
                       activeOpacity={0.88}
-                      onPress={() => { handleRadialAction(() => { void playNext() }) }}
+                      onPress={() => { playHaptic('next'); handleRadialAction(() => { void playNext() }) }}
                     >
                       <Icon name="nextMusic" color="#f6f6f6" size={20} />
                     </TouchableOpacity>

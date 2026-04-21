@@ -3,6 +3,7 @@ import { View, PanResponder } from 'react-native'
 import { useDrag } from '@/utils/hooks'
 import { createStyle } from '@/utils/tools'
 import { useTheme } from '@/store/theme/hook'
+import { playHaptic } from '@/utils/haptics'
 // import { scaleSizeW } from '@/utils/pixelRatio'
 // import { AppColors } from '@/theme'
 
@@ -105,6 +106,7 @@ const Progress = ({ progress, duration, buffered, paddingTop }: {
   const theme = useTheme()
   const [draging, setDraging] = useState(false)
   const [dragProgress, setDragProgress] = useState(0)
+  const lastTickRef = useRef(-1)
   // console.log(progress)
   const progressStr: `${number}%` = `${progress * 100}%`
 
@@ -113,7 +115,24 @@ const Progress = ({ progress, duration, buffered, paddingTop }: {
     durationRef.current = duration
   }, [duration])
   const onSetProgress = useCallback((progress: number) => {
+    playHaptic('dragCommit')
+    lastTickRef.current = -1
     global.app_event.setProgress(progress * durationRef.current)
+  }, [])
+  const handleDragState = useCallback((drag: boolean) => {
+    if (drag) {
+      lastTickRef.current = -1
+      playHaptic('drag')
+    }
+    setDraging(drag)
+  }, [])
+  const handleDragProgress = useCallback((progress: number) => {
+    const nextTick = Math.round(progress * 20)
+    if (lastTickRef.current != nextTick) {
+      lastTickRef.current = nextTick
+      playHaptic('drag')
+    }
+    setDragProgress(progress)
   }, [])
 
   return (
@@ -133,7 +152,7 @@ const Progress = ({ progress, duration, buffered, paddingTop }: {
               )
         }
       </View>
-      <PreassBar onDragState={setDraging} setDragProgress={setDragProgress} onSetProgress={onSetProgress} />
+      <PreassBar onDragState={handleDragState} setDragProgress={handleDragProgress} onSetProgress={onSetProgress} />
       {/* <View style={{ ...styles.progressBar, height: '100%', width: progressStr }}><Pressable style={styles.progressDot}></Pressable></View> */}
     </View>
   )

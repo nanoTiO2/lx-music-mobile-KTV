@@ -14,6 +14,7 @@ import type { Position } from './ListMenu'
 import type { SelectMode } from './MultipleModeBar'
 import { useActiveListId } from '@/store/list/hook'
 import { useSettingValue } from '@/store/setting/hook'
+import { playHaptic } from '@/utils/haptics'
 
 type FlatListType = FlatListProps<LX.Music.MusicInfo>
 
@@ -179,6 +180,7 @@ const List = forwardRef<ListType, ListProps>(({ onShowMenu, onMuiltSelectMode, o
 
   const activeIndex = usePlayIndex()
   const handlePlay = (index: number) => {
+    playHaptic('song')
     void playList(listState.activeListId, index)
   }
 

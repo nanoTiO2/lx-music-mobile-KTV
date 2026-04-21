@@ -5,6 +5,7 @@ import { useSettingValue } from '@/store/setting/hook'
 import { useI18n } from '@/lang'
 import { updateSetting } from '@/core/common'
 import Btn from './Btn'
+import { playHaptic } from '@/utils/haptics'
 
 export default memo(() => {
   const togglePlayMethod = useSettingValue('player.togglePlayMethod')
@@ -14,6 +15,23 @@ export default memo(() => {
     let index = MUSIC_TOGGLE_MODE_LIST.indexOf(togglePlayMethod)
     if (++index >= MUSIC_TOGGLE_MODE_LIST.length) index = 0
     const mode = MUSIC_TOGGLE_MODE_LIST[index]
+    switch (mode) {
+      case MUSIC_TOGGLE_MODE.listLoop:
+        playHaptic('modeListLoop')
+        break
+      case MUSIC_TOGGLE_MODE.random:
+        playHaptic('modeRandom')
+        break
+      case MUSIC_TOGGLE_MODE.list:
+        playHaptic('modeOrder')
+        break
+      case MUSIC_TOGGLE_MODE.singleLoop:
+        playHaptic('modeSingleLoop')
+        break
+      default:
+        playHaptic('modeSingle')
+        break
+    }
     updateSetting({ 'player.togglePlayMethod': mode })
     let modeName: 'play_list_loop' | 'play_list_random' | 'play_list_order' | 'play_single_loop' | 'play_single'
     switch (mode) {

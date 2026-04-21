@@ -20,6 +20,8 @@ import { setPitch, setPlaybackRate, updateMetaData } from '@/plugins/player'
 import { setPlaybackRate as setLyricPlaybackRate } from '@/core/lyric'
 import playerState from '@/store/player/state'
 import { playHaptic } from '@/utils/haptics'
+import Slider, { type SliderProps } from '@/components/common/Slider'
+import { getSystemVolume, setSystemVolume } from '@/utils/nativeModules/utils'
 
 const BTN_SIZES = {
   vertical: {
@@ -56,6 +58,9 @@ export default memo(({ direction }: {
   const [progress, setProgress] = useState(0)
   const [etaMs, setEtaMs] = useState(0)
   const [onlineAnalyzePath, setOnlineAnalyzePath] = useState('')
+  const [systemVolume, setSystemVolumeState] = useState(0.5)
+  const [sliderValue, setSliderValue] = useState(50)
+  const [isSystemVolumeSliding, setSystemVolumeSliding] = useState(false)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const mountedRef = useRef(true)
   const pitchSemitones = useSettingValue('player.pitchSemitones')
@@ -91,6 +96,15 @@ export default memo(({ direction }: {
       if (timerRef.current) clearInterval(timerRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (!visible) return
+    void getSystemVolume().then(value => {
+      const nextValue = Math.max(0, Math.min(1, value))
+      setSystemVolumeState(nextValue)
+      setSliderValue(Math.round(nextValue * 100))
+    }).catch(() => {})
+  }, [visible])
 
   if (!musicInfo) return null
 
@@ -216,6 +230,37 @@ export default memo(({ direction }: {
     })
   }
 
+  const applySystemVolume = (value: number) => {
+    const nextValue = Math.max(0, Math.min(100, Math.round(value)))
+    setSliderValue(nextValue)
+    setSystemVolumeSliding(false)
+    playHaptic('selection')
+    void setSystemVolume(nextValue / 100).then(result => {
+      const actualValue = Math.max(0, Math.min(1, result))
+      setSystemVolumeState(actualValue)
+      setSliderValue(Math.round(actualValue * 100))
+    }).catch(() => {
+      toast('系统音量调整失败')
+    })
+  }
+
+  const handleSystemVolumeStart: SliderProps['onSlidingStart'] = () => {
+    setSystemVolumeSliding(true)
+  }
+
+  const handleSystemVolumeChange: SliderProps['onValueChange'] = value => {
+    setSliderValue(Math.round(value))
+  }
+
+  const handleSystemVolumeComplete: SliderProps['onSlidingComplete'] = value => {
+    playHaptic('dragCommit')
+    applySystemVolume(value)
+  }
+
+  const stepSystemVolume = (delta: number) => {
+    applySystemVolume((isSystemVolumeSliding ? sliderValue : Math.round(systemVolume * 100)) + delta)
+  }
+
   return (
     <>
       <TouchableOpacity
@@ -302,6 +347,31 @@ export default memo(({ direction }: {
                 </TouchableOpacity>
               </View>
               <SettingPlaybackRate />
+              <View style={{ ...styles.row, borderBottomColor: theme['c-border-background'] }}>
+                <Text style={styles.rowIndex}>6.</Text>
+                <Text style={styles.rowLabel}>系统音量</Text>
+                <Text color={theme['c-font-label']}>{`${isSystemVolumeSliding ? sliderValue : Math.round(systemVolume * 100)}%`}</Text>
+              </View>
+              <View style={styles.quickBtnRow}>
+                <TouchableOpacity style={styles.quickBtn} onPress={() => { stepSystemVolume(-8) }}>
+                  <Text color="#f6f6f6" size={13}>-8%</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.quickBtn} onPress={() => { applySystemVolume(50) }}>
+                  <Text color="#f6f6f6" size={13}>50%</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.quickBtn} onPress={() => { stepSystemVolume(8) }}>
+                  <Text color="#f6f6f6" size={13}>+8%</Text>
+                </TouchableOpacity>
+              </View>
+              <Slider
+                minimumValue={0}
+                maximumValue={100}
+                onSlidingStart={handleSystemVolumeStart}
+                onValueChange={handleSystemVolumeChange}
+                onSlidingComplete={handleSystemVolumeComplete}
+                step={1}
+                value={isSystemVolumeSliding ? sliderValue : Math.round(systemVolume * 100)}
+              />
             </View>
           </ScrollView>
         </Popup>

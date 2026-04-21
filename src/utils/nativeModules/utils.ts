@@ -120,6 +120,21 @@ export const adjustSystemVolume = async(delta: number): Promise<number> => {
   return UtilsModule.adjustSystemVolume(delta)
 }
 
-export const playHaptic = async(kind: 'selection' | 'play' | 'pause' | 'next' | 'success' | 'drag'): Promise<void> => {
+export const playHaptic = async(kind:
+  | 'selection'
+  | 'song'
+  | 'play'
+  | 'pause'
+  | 'prev'
+  | 'next'
+  | 'success'
+  | 'drag'
+  | 'dragCommit'
+  | 'modeListLoop'
+  | 'modeRandom'
+  | 'modeOrder'
+  | 'modeSingleLoop'
+  | 'modeSingle'
+): Promise<void> => {
   await UtilsModule.playHaptic(kind)
 }

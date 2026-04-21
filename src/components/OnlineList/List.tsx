@@ -13,6 +13,7 @@ import { useI18n } from '@/lang'
 import Text from '@/components/common/Text'
 import { handlePlay } from './listAction'
 import { useSettingValue } from '@/store/setting/hook'
+import { playHaptic } from '@/utils/haptics'
 
 type FlatListType = FlatListProps<LX.Music.MusicInfoOnline>
 
@@ -157,6 +158,7 @@ const List = forwardRef<ListType, ListProps>(({
       if (isMultiSelectModeRef.current) {
         handleSelect(item, index)
       } else {
+        playHaptic('song')
         if (onPlayList != null) {
           onPlayList(index)
         } else {
