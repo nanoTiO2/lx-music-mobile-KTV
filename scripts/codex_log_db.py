@@ -26,6 +26,33 @@ def connect_db(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def has_table(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        """
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table' AND name = ?
+        """,
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
+def has_column(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
+    columns = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return any(column["name"] == column_name for column in columns)
+
+
+def ensure_column(
+    conn: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    column_sql: str,
+) -> None:
+    if has_table(conn, table_name) and not has_column(conn, table_name, column_name):
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
+
+
 def init_db(db_path: Path) -> None:
     with closing(connect_db(db_path)) as conn:
         conn.executescript(
@@ -46,6 +73,8 @@ def init_db(db_path: Path) -> None:
               timestamp TEXT NOT NULL,
               task_id TEXT NOT NULL,
               session_id TEXT NOT NULL,
+              user_name TEXT NOT NULL DEFAULT '',
+              agent_name TEXT NOT NULL DEFAULT '',
               user_requirement TEXT NOT NULL,
               thinking_path TEXT NOT NULL DEFAULT '',
               key_steps TEXT NOT NULL DEFAULT '',
@@ -60,9 +89,74 @@ def init_db(db_path: Path) -> None:
               timestamp TEXT NOT NULL,
               task_id TEXT NOT NULL,
               session_id TEXT NOT NULL,
+              user_name TEXT NOT NULL DEFAULT '',
+              agent_name TEXT NOT NULL DEFAULT '',
               artifact_type TEXT NOT NULL,
               artifact_path TEXT NOT NULL,
               description TEXT NOT NULL DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS sessions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              timestamp TEXT NOT NULL,
+              task_id TEXT NOT NULL,
+              session_id TEXT NOT NULL,
+              user_name TEXT NOT NULL DEFAULT '',
+              agent_name TEXT NOT NULL DEFAULT '',
+              user_requirement TEXT NOT NULL,
+              summary TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'planning'
+            );
+
+            CREATE TABLE IF NOT EXISTS artifacts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              timestamp TEXT NOT NULL,
+              task_id TEXT NOT NULL,
+              session_id TEXT NOT NULL,
+              user_name TEXT NOT NULL DEFAULT '',
+              agent_name TEXT NOT NULL DEFAULT '',
+              artifact_type TEXT NOT NULL,
+              artifact_path TEXT NOT NULL,
+              description TEXT NOT NULL DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS agent_activity (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              timestamp TEXT NOT NULL,
+              task_id TEXT NOT NULL,
+              session_id TEXT NOT NULL,
+              user_name TEXT NOT NULL DEFAULT '',
+              agent_name TEXT NOT NULL DEFAULT '',
+              activity_type TEXT NOT NULL,
+              detail TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'running'
+            );
+
+            CREATE TABLE IF NOT EXISTS issues (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              timestamp TEXT NOT NULL,
+              task_id TEXT NOT NULL,
+              session_id TEXT NOT NULL,
+              user_name TEXT NOT NULL DEFAULT '',
+              agent_name TEXT NOT NULL DEFAULT '',
+              issue_key TEXT NOT NULL,
+              issue_summary TEXT NOT NULL,
+              root_cause TEXT NOT NULL DEFAULT '',
+              resolution TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'open'
+            );
+
+            CREATE TABLE IF NOT EXISTS decisions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              timestamp TEXT NOT NULL,
+              task_id TEXT NOT NULL,
+              session_id TEXT NOT NULL,
+              user_name TEXT NOT NULL DEFAULT '',
+              agent_name TEXT NOT NULL DEFAULT '',
+              decision_key TEXT NOT NULL,
+              decision_summary TEXT NOT NULL,
+              rationale TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'accepted'
             );
 
             CREATE INDEX IF NOT EXISTS idx_task_sessions_task
@@ -73,8 +167,27 @@ def init_db(db_path: Path) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_task_artifacts_task
               ON task_artifacts(task_id, session_id, timestamp);
+
+            CREATE INDEX IF NOT EXISTS idx_sessions_task
+              ON sessions(task_id, session_id, timestamp);
+
+            CREATE INDEX IF NOT EXISTS idx_artifacts_task
+              ON artifacts(task_id, session_id, timestamp);
+
+            CREATE INDEX IF NOT EXISTS idx_agent_activity_task
+              ON agent_activity(task_id, session_id, timestamp);
+
+            CREATE INDEX IF NOT EXISTS idx_issues_task
+              ON issues(task_id, session_id, timestamp);
+
+            CREATE INDEX IF NOT EXISTS idx_decisions_task
+              ON decisions(task_id, session_id, timestamp);
             """
         )
+        ensure_column(conn, "task_logs", "user_name", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(conn, "task_logs", "agent_name", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(conn, "task_artifacts", "user_name", "TEXT NOT NULL DEFAULT ''")
+        ensure_column(conn, "task_artifacts", "agent_name", "TEXT NOT NULL DEFAULT ''")
         conn.commit()
 
 
@@ -133,19 +246,23 @@ def append_log(
     error_message: str,
     fix_record: str,
     status: str,
+    user_name: str = "",
+    agent_name: str = "",
 ) -> None:
     with closing(connect_db(db_path)) as conn:
         conn.execute(
             """
             INSERT INTO task_logs (
-              timestamp, task_id, session_id, user_requirement, thinking_path,
-              key_steps, code_snippet, error_message, fix_record, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              timestamp, task_id, session_id, user_name, agent_name, user_requirement,
+              thinking_path, key_steps, code_snippet, error_message, fix_record, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 now_iso(),
                 task_id,
                 session_id,
+                user_name,
+                agent_name,
                 user_requirement,
                 thinking_path,
                 key_steps,
@@ -165,15 +282,62 @@ def add_artifact(
     artifact_type: str,
     artifact_path: str,
     description: str,
+    user_name: str = "",
+    agent_name: str = "",
 ) -> None:
     with closing(connect_db(db_path)) as conn:
         conn.execute(
             """
             INSERT INTO task_artifacts (
-              timestamp, task_id, session_id, artifact_type, artifact_path, description
-            ) VALUES (?, ?, ?, ?, ?, ?)
+              timestamp, task_id, session_id, user_name, agent_name, artifact_type, artifact_path, description
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (now_iso(), task_id, session_id, artifact_type, artifact_path, description),
+            (now_iso(), task_id, session_id, user_name, agent_name, artifact_type, artifact_path, description),
+        )
+        conn.commit()
+
+
+def add_session_record(
+    db_path: Path,
+    task_id: str,
+    session_id: str,
+    user_requirement: str,
+    summary: str,
+    status: str,
+    user_name: str = "",
+    agent_name: str = "",
+) -> None:
+    with closing(connect_db(db_path)) as conn:
+        conn.execute(
+            """
+            INSERT INTO sessions (
+              timestamp, task_id, session_id, user_name, agent_name, user_requirement, summary, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (now_iso(), task_id, session_id, user_name, agent_name, user_requirement, summary, status),
+        )
+        conn.commit()
+
+
+def add_decision(
+    db_path: Path,
+    task_id: str,
+    session_id: str,
+    decision_key: str,
+    decision_summary: str,
+    rationale: str,
+    status: str = "accepted",
+    user_name: str = "",
+    agent_name: str = "",
+) -> None:
+    with closing(connect_db(db_path)) as conn:
+        conn.execute(
+            """
+            INSERT INTO decisions (
+              timestamp, task_id, session_id, user_name, agent_name, decision_key, decision_summary, rationale, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (now_iso(), task_id, session_id, user_name, agent_name, decision_key, decision_summary, rationale, status),
         )
         conn.commit()
 
@@ -293,6 +457,8 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--requirement", required=True)
     init_parser.add_argument("--summary", default="")
     init_parser.add_argument("--status", default="planning")
+    init_parser.add_argument("--user-name", default="")
+    init_parser.add_argument("--agent-name", default="")
 
     log_parser = subparsers.add_parser("log", help="Append one task log")
     log_parser.add_argument("--task-id", required=True)
@@ -304,6 +470,8 @@ def build_parser() -> argparse.ArgumentParser:
     log_parser.add_argument("--error-message", default="")
     log_parser.add_argument("--fix-record", default="")
     log_parser.add_argument("--status", default="running")
+    log_parser.add_argument("--user-name", default="")
+    log_parser.add_argument("--agent-name", default="")
 
     artifact_parser = subparsers.add_parser("artifact", help="Record generated artifact")
     artifact_parser.add_argument("--task-id", required=True)
@@ -311,6 +479,18 @@ def build_parser() -> argparse.ArgumentParser:
     artifact_parser.add_argument("--type", required=True, dest="artifact_type")
     artifact_parser.add_argument("--path", required=True, dest="artifact_path")
     artifact_parser.add_argument("--description", default="")
+    artifact_parser.add_argument("--user-name", default="")
+    artifact_parser.add_argument("--agent-name", default="")
+
+    decision_parser = subparsers.add_parser("decision", help="Record architecture or implementation decision")
+    decision_parser.add_argument("--task-id", required=True)
+    decision_parser.add_argument("--session-id", required=True)
+    decision_parser.add_argument("--key", required=True, dest="decision_key")
+    decision_parser.add_argument("--summary", required=True, dest="decision_summary")
+    decision_parser.add_argument("--rationale", default="")
+    decision_parser.add_argument("--status", default="accepted")
+    decision_parser.add_argument("--user-name", default="")
+    decision_parser.add_argument("--agent-name", default="")
 
     summary_parser = subparsers.add_parser("summary", help="Summarize history")
     summary_parser.add_argument("--task-id")
@@ -326,6 +506,16 @@ def main() -> int:
 
     if args.command == "init":
         upsert_session(db_path, args.task_id, args.session_id, args.requirement, args.summary, args.status)
+        add_session_record(
+            db_path,
+            args.task_id,
+            args.session_id,
+            args.requirement,
+            args.summary,
+            args.status,
+            user_name=args.user_name,
+            agent_name=args.agent_name,
+        )
         print(json.dumps({"db": str(db_path), "status": "initialized"}, ensure_ascii=False))
         return 0
 
@@ -341,6 +531,8 @@ def main() -> int:
             error_message=args.error_message,
             fix_record=args.fix_record,
             status=args.status,
+            user_name=args.user_name,
+            agent_name=args.agent_name,
         )
         print(json.dumps({"db": str(db_path), "status": "logged"}, ensure_ascii=False))
         return 0
@@ -353,8 +545,25 @@ def main() -> int:
             artifact_type=args.artifact_type,
             artifact_path=args.artifact_path,
             description=args.description,
+            user_name=args.user_name,
+            agent_name=args.agent_name,
         )
         print(json.dumps({"db": str(db_path), "status": "artifact_recorded"}, ensure_ascii=False))
+        return 0
+
+    if args.command == "decision":
+        add_decision(
+            db_path,
+            args.task_id,
+            args.session_id,
+            args.decision_key,
+            args.decision_summary,
+            args.rationale,
+            status=args.status,
+            user_name=args.user_name,
+            agent_name=args.agent_name,
+        )
+        print(json.dumps({"db": str(db_path), "status": "decision_recorded"}, ensure_ascii=False))
         return 0
 
     if args.command == "summary":

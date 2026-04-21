@@ -4,12 +4,13 @@ import commonState from '@/store/common/state'
 import settingState from '@/store/setting/state'
 import { setStatusbarHeight } from '@/core/common'
 import { windowSizeTools, getWindowSize } from '@/utils/windowSizeTools'
+import { getStatusBarHeightSafe } from '@/utils/statusBar'
 
 const getStatusbarHeight = (winHeight: number, layoutHeight: number) => {
   const height = (!settingState.setting['common.alwaysKeepStatusbarHeight'] &&
           parseFloat(winHeight.toFixed(2)) >= parseFloat(layoutHeight.toFixed(2)))
     ? 0
-    : (StatusBar.currentHeight ?? 0)
+    : getStatusBarHeightSafe()
 
   return height
 }
@@ -69,4 +70,3 @@ export default memo(() => {
   }, [])
   return (<View style={StyleSheet.absoluteFill} onLayout={handleLayout} />)
 }, () => true)
-

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState, FlatList, type FlatListProps, StatusBar as RNStatusBar, TouchableOpacity, View, useWindowDimensions, ScrollView } from 'react-native'
 import Text from '@/components/common/Text'
 import { AnimatedColorText } from '@/components/common/Text'
@@ -6,6 +6,7 @@ import Popup, { type PopupType } from '@/components/common/Popup'
 import Slider from '@/components/common/Slider'
 import PageContent from '@/components/PageContent'
 import { pop } from '@/navigation/utils'
+import { useNavigationComponentDidDisappear } from '@/navigation/hooks'
 import { useLrcPlay, useLrcSet, type Line } from '@/plugins/lyric'
 import { useSettingValue } from '@/store/setting/hook'
 import { updateSetting } from '@/core/common'
@@ -348,10 +349,27 @@ export default memo(({ componentId }: { componentId: string }) => {
     playHaptic('selection')
   }
 
+  const restoreStageSystemUi = useCallback(() => {
+    screenUnkeepAwake()
+    void setScreenOrientation('auto').catch(() => {})
+    void setImmersiveMode(false).catch(() => {})
+    RNStatusBar.setHidden(false, 'fade')
+    RNStatusBar.setBarStyle(theme.isDark ? 'light-content' : 'dark-content', true)
+    RNStatusBar.setTranslucent(true)
+    RNStatusBar.setBackgroundColor('transparent', true)
+  }, [theme.isDark])
+
   const handleAction = (action: () => void) => {
     triggerButtonFeedback()
     action()
   }
+
+  const handleExitStage = useCallback(() => {
+    restoreStageSystemUi()
+    requestAnimationFrame(() => {
+      void pop(componentId)
+    })
+  }, [componentId, restoreStageSystemUi])
 
   const clearRadialHideTimer = () => {
     if (!radialHideTimerRef.current) return
@@ -403,14 +421,11 @@ export default memo(({ componentId }: { componentId: string }) => {
       subscription.remove()
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
       clearRadialHideTimer()
-      screenUnkeepAwake()
-      void setScreenOrientation('auto').catch(() => {})
-      void setImmersiveMode(false).catch(() => {})
-      RNStatusBar.setHidden(false, 'fade')
-      RNStatusBar.setTranslucent(false)
-      RNStatusBar.setBackgroundColor('transparent', true)
+      restoreStageSystemUi()
     }
-  }, [])
+  }, [restoreStageSystemUi])
+
+  useNavigationComponentDidDisappear(componentId, restoreStageSystemUi)
 
   useEffect(() => {
     setPlaybackRateValue(Math.trunc(playbackRate * 100))
@@ -886,7 +901,7 @@ export default memo(({ componentId }: { componentId: string }) => {
               ? (
                 <>
                   <View style={[styles.topBar, { top: 8 + layoutTopOffset }]}>
-                    <TouchableOpacity style={styles.backBtn} onPress={() => { handleAction(() => { void pop(componentId) }) }}>
+                    <TouchableOpacity style={styles.backBtn} onPress={() => { handleAction(handleExitStage) }}>
                       <Text color="#f6f6f6" size={15}>返回</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.backBtn} onPress={() => { handleAction(openStageSettingPopup) }}>

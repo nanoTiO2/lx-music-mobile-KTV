@@ -17,6 +17,7 @@
     "pack:android:debug": "./gradlew assembleDebug",
     "pack": "npm run pack:android",
     "pack:android": "cd android && gradlew.bat assembleRelease",
+    "prompt:relay": "node scripts/prompt_ws_relay.js",
     "clear": "cd android && gradlew.bat clean",
     "clear:full": "git clean -fdx -e android/keystore.properties -e android/app/*.keystore",
     "build:theme": "node src/theme/themes/createThemes.js",
@@ -65,7 +66,8 @@
     "react-native-quick-base64": "^2.2.2",
     "react-native-quick-md5": "^3.0.9",
     "react-native-track-player": "github:lyswhut/react-native-track-player#d4a062f76ba3d0c408e0f0827b721cc4bf46dffd",
-    "react-native-vector-icons": "10.2.0"
+    "react-native-vector-icons": "10.2.0",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

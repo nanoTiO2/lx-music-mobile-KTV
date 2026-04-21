@@ -171,7 +171,7 @@ export const parseLyric = (lrc: string): LX.Music.LyricInfo => {
   } as const
   const tagRxp = /(?:^|\n\s*)\[awlrc:([^\]]+)]/i
   const profileTagRxp = /(?:^|\n\s*)\[lx_music_profile:([^\]]+)]/ig
-  const profileHeaderRxp = /(?:^|\n\s*)\[(key|bpm|beat|analysis_time):([^\]]+)]/ig
+  const profileHeaderRxp = /(?:^|\n\s*)\[(key|bpm|beat|analysis_time|highest_note|highest_freq):([^\]]+)]/ig
   const lrcRxp = /^(lrc|awlrc|tlrc|rlrc):([^,]+)$/i
   const parse = (content: string) => {
     const lyricInfo: Partial<LX.Music.LyricInfo> = {}

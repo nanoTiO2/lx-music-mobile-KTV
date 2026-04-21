@@ -4,8 +4,39 @@ export interface PortableMusicProfile {
   firstBeatOffsetMs: number
   confidence: number
   analyzedDurationMs: number
+  analysisScope?: 'quick' | 'full'
   majorKey: string
   keyConfidence: number
+  keyMode?: 'major' | 'minor'
+  keyTonic?: string
+  highestNote?: string
+  highestMidi?: number
+  highestFreqHz?: number
+  highestTimeMs?: number
+  dominantHighNote?: string
+  dominantLowNote?: string
+  averageNote?: string
+  averageMidi?: number
+  commonHighNote?: string
+  commonHighMidi?: number
+  commonLowNote?: string
+  commonLowMidi?: number
+  lowestNote?: string
+  lowestMidi?: number
+  lowestFreqHz?: number
+  lowestTimeMs?: number
+  timeSignature?: '4/4' | '3/4' | '6/8'
+  waveformSamples?: number[]
+  pitchTrack?: Array<{
+    timeMs: number
+    midi: number
+  }>
+  chordSegments?: Array<{
+    startMs: number
+    endMs: number
+    label: string
+    confidence: number
+  }>
 }
 
 export interface StoredPortableMusicProfile extends PortableMusicProfile {
@@ -16,12 +47,10 @@ export interface StoredPortableMusicProfile extends PortableMusicProfile {
 export const PROFILE_LRC_TAG = 'lx_music_profile'
 export const PROFILE_BPM_TAG = 'bpm'
 export const PROFILE_KEY_TAG = 'key'
-export const PROFILE_BEAT_TAG = 'beat'
-export const PROFILE_ANALYSIS_TAG = 'analysis_time'
-const PROFILE_DISPLAY_RXP = /(?:^|\n)\[\d{1,2}:\d{1,2}(?:\.\d{1,3})?](?:调号|拍速|节拍|分析时间)：[^\n]*/g
+const PROFILE_DISPLAY_RXP = /(?:^|\n)\[\d{1,2}:\d{1,2}(?:\.\d{1,3})?](?:调号|拍速|节拍|分析时间|最高音)：[^\n]*/g
 
 export const PROFILE_LRC_RXP = new RegExp(`(?:^|\\n\\s*)\\[${PROFILE_LRC_TAG}:([^\\]]+)]\\s*`, 'i')
-export const PROFILE_HEADER_RXP = /(?:^|\n\s*)\[(key|bpm|beat|analysis_time):([^\]]+)]\s*/ig
+export const PROFILE_HEADER_RXP = /(?:^|\n\s*)\[(key|bpm|beat|analysis_time|highest_note|highest_freq):([^\]]+)]\s*/ig
 
 export const normalizePortableMusicProfile = (data: Partial<StoredPortableMusicProfile> | null | undefined) => {
   if (!data) return null
@@ -40,8 +69,51 @@ export const normalizePortableMusicProfile = (data: Partial<StoredPortableMusicP
     firstBeatOffsetMs: data.firstBeatOffsetMs,
     confidence: data.confidence,
     analyzedDurationMs: data.analyzedDurationMs,
+    analysisScope: data.analysisScope == 'full' ? 'full' : data.analysisScope == 'quick' ? 'quick' : undefined,
     majorKey: data.majorKey,
     keyConfidence: data.keyConfidence,
+    keyMode: data.keyMode == 'minor' ? 'minor' : data.keyMode == 'major' ? 'major' : undefined,
+    keyTonic: typeof data.keyTonic == 'string' ? data.keyTonic : undefined,
+    highestNote: typeof data.highestNote == 'string' ? data.highestNote : undefined,
+    highestMidi: typeof data.highestMidi == 'number' ? data.highestMidi : undefined,
+    highestFreqHz: typeof data.highestFreqHz == 'number' ? data.highestFreqHz : undefined,
+    highestTimeMs: typeof data.highestTimeMs == 'number' ? data.highestTimeMs : undefined,
+    dominantHighNote: typeof data.dominantHighNote == 'string' ? data.dominantHighNote : undefined,
+    dominantLowNote: typeof data.dominantLowNote == 'string' ? data.dominantLowNote : undefined,
+    averageNote: typeof data.averageNote == 'string' ? data.averageNote : undefined,
+    averageMidi: typeof data.averageMidi == 'number' ? data.averageMidi : undefined,
+    commonHighNote: typeof data.commonHighNote == 'string' ? data.commonHighNote : undefined,
+    commonHighMidi: typeof data.commonHighMidi == 'number' ? data.commonHighMidi : undefined,
+    commonLowNote: typeof data.commonLowNote == 'string' ? data.commonLowNote : undefined,
+    commonLowMidi: typeof data.commonLowMidi == 'number' ? data.commonLowMidi : undefined,
+    lowestNote: typeof data.lowestNote == 'string' ? data.lowestNote : undefined,
+    lowestMidi: typeof data.lowestMidi == 'number' ? data.lowestMidi : undefined,
+    lowestFreqHz: typeof data.lowestFreqHz == 'number' ? data.lowestFreqHz : undefined,
+    lowestTimeMs: typeof data.lowestTimeMs == 'number' ? data.lowestTimeMs : undefined,
+    timeSignature: data.timeSignature == '3/4' || data.timeSignature == '6/8' || data.timeSignature == '4/4'
+      ? data.timeSignature
+      : undefined,
+    waveformSamples: Array.isArray(data.waveformSamples)
+      ? data.waveformSamples.filter(item => typeof item == 'number' && Number.isFinite(item)).map(item => Math.max(0, Math.min(1, item)))
+      : undefined,
+    pitchTrack: Array.isArray(data.pitchTrack)
+      ? data.pitchTrack
+        .filter(item => item && typeof item.timeMs == 'number' && typeof item.midi == 'number')
+        .map(item => ({
+          timeMs: item.timeMs,
+          midi: item.midi,
+        }))
+      : undefined,
+    chordSegments: Array.isArray(data.chordSegments)
+      ? data.chordSegments
+        .filter(item => item && typeof item.startMs == 'number' && typeof item.endMs == 'number' && typeof item.label == 'string')
+        .map(item => ({
+          startMs: item.startMs,
+          endMs: item.endMs,
+          label: item.label,
+          confidence: typeof item.confidence == 'number' ? item.confidence : 0,
+        }))
+      : undefined,
   } satisfies PortableMusicProfile
 }
 
@@ -63,13 +135,10 @@ export const injectPortableMusicProfileIntoLrc = (raw: string, payload: StoredPo
     .replace(PROFILE_LRC_RXP, '')
     .replace(PROFILE_HEADER_RXP, '')
     .replace(/^\s*\n/, '')
-  const analyzedAt = payload.updatedAt.replace('T', ' ').replace(/\.\d+Z?$/, '').replace(/Z$/, '')
   const encoded = Buffer.from(JSON.stringify(payload)).toString('base64')
   const metadataLines = [
     `[${PROFILE_KEY_TAG}:${payload.majorKey}]`,
     `[${PROFILE_BPM_TAG}:${Math.round(payload.bpm)} BPM]`,
-    `[${PROFILE_BEAT_TAG}:${payload.beatIntervalMs}ms/${payload.firstBeatOffsetMs}ms]`,
-    `[${PROFILE_ANALYSIS_TAG}:${analyzedAt}]`,
     `[${PROFILE_LRC_TAG}:${encoded}]`,
   ]
   const lines = cleanBody.split(/\r\n|\n|\r/)
@@ -105,8 +174,6 @@ export const injectPortableMusicProfileIntoLrc = (raw: string, payload: StoredPo
   const displayLines = [
     `${formatDisplayTime(pickDisplayTime())}调号：${payload.majorKey}`,
     `${formatDisplayTime(pickDisplayTime())}拍速：${Math.round(payload.bpm)} BPM`,
-    `${formatDisplayTime(pickDisplayTime())}节拍：${payload.beatIntervalMs}ms/${payload.firstBeatOffsetMs}ms`,
-    `${formatDisplayTime(pickDisplayTime())}分析时间：${analyzedAt}`,
   ]
   const nextLines = [
     ...metadataLines,

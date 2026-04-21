@@ -6,6 +6,9 @@ import {
   Home,
   PlayDetail,
   LyricStage,
+  PromptControl,
+  PromptReceiver,
+  PromptStage,
   SonglistDetail,
   Comment,
   // Setting,
@@ -16,6 +19,9 @@ import {
   HOME_SCREEN,
   PLAY_DETAIL_SCREEN,
   LYRIC_STAGE_SCREEN,
+  PROMPT_CONTROL_SCREEN,
+  PROMPT_STAGE_SCREEN,
+  PROMPT_RECEIVER_SCREEN,
   SONGLIST_DETAIL_SCREEN,
   COMMENT_SCREEN,
   VERSION_MODAL,
@@ -45,6 +51,9 @@ export default () => {
   Navigation.registerComponent(HOME_SCREEN, () => WrappedComponent(Home))
   Navigation.registerComponent(PLAY_DETAIL_SCREEN, () => WrappedComponent(PlayDetail))
   Navigation.registerComponent(LYRIC_STAGE_SCREEN, () => WrappedComponent(LyricStage))
+  Navigation.registerComponent(PROMPT_CONTROL_SCREEN, () => WrappedComponent(PromptControl))
+  Navigation.registerComponent(PROMPT_RECEIVER_SCREEN, () => WrappedComponent(PromptReceiver))
+  Navigation.registerComponent(PROMPT_STAGE_SCREEN, () => WrappedComponent(PromptStage))
   Navigation.registerComponent(SONGLIST_DETAIL_SCREEN, () => WrappedComponent(SonglistDetail))
   Navigation.registerComponent(COMMENT_SCREEN, () => WrappedComponent(Comment))
   Navigation.registerComponent(VERSION_MODAL, () => WrappedComponent(VersionModal))

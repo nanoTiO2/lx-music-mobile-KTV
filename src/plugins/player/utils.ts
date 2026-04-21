@@ -248,7 +248,7 @@ export const setStop = async() => {
   await TrackPlayer.stop()
   if (!isEmpty()) await TrackPlayer.skipToNext()
 }
-export const setLoop = async(loop: boolean) => TrackPlayer.setRepeatMode(loop ? RepeatMode.Off : RepeatMode.Track)
+export const setLoop = async(loop: boolean) => TrackPlayer.setRepeatMode(loop ? RepeatMode.Track : RepeatMode.Off)
 
 export const setPause = async() => {
   if (isMixerActive()) {

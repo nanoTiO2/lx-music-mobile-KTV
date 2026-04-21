@@ -178,17 +178,17 @@ const getEmbeddedMusicProfile = async(filePath: string) => {
 }
 
 export const getCachedMusicProfile = async(filePath: string) => {
+  const cachePath = getMusicProfileCachePath(filePath)
+  if (cachePath && await existsFile(cachePath).catch(() => false)) {
+    try {
+      const raw = await readFile(cachePath)
+      const cachedProfile = normalizePortableMusicProfile(JSON.parse(raw) as Partial<StoredMusicProfile>)
+      if (cachedProfile) return cachedProfile
+    } catch {}
+  }
   const embeddedProfile = await getEmbeddedMusicProfile(filePath)
   if (embeddedProfile) return embeddedProfile
-  const cachePath = getMusicProfileCachePath(filePath)
-  if (!cachePath) return null
-  if (!(await existsFile(cachePath).catch(() => false))) return null
-  try {
-    const raw = await readFile(cachePath)
-    return normalizePortableMusicProfile(JSON.parse(raw) as Partial<StoredMusicProfile>)
-  } catch {
-    return null
-  }
+  return null
 }
 
 const persistMusicProfileToLyric = async(filePath: string, payload: StoredMusicProfile) => {
@@ -221,9 +221,13 @@ export const getMusicProfile = async(filePath: string, maxAnalyzeMs: number = 90
   if (!task) {
     task = analyzeMixerMusicProfile(path, maxAnalyzeMs)
       .then(async profile => {
-        await persistMusicProfile(path, profile).catch(() => {})
+        const normalizedProfile: MusicProfile = {
+          ...profile,
+          analysisScope: maxAnalyzeMs > 90_000 ? 'full' : 'quick',
+        }
+        await persistMusicProfile(path, normalizedProfile).catch(() => {})
         profileCache.delete(path)
-        return profile
+        return normalizedProfile
       })
       .catch(err => {
         profileCache.delete(path)

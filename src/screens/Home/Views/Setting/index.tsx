@@ -14,6 +14,7 @@ export default () => {
   useBackHandler(useCallback(() => {
     if (Object.keys(commonState.componentIds).length == 1 && commonState.navActiveId == 'nav_setting') {
       setNavActiveId(commonState.lastNavActiveId)
+      global.app_event.changeMenuVisible(true)
       return true
     }
     return false

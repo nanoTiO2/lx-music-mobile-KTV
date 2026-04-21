@@ -1,8 +1,8 @@
 import { addPlayedList, clearPlayedList } from '@/core/player/playedList'
-import { pause, playNext } from '@/core/player/player'
+import { pause, play, playNext } from '@/core/player/player'
 import { setStatusText, setIsPlay } from '@/core/player/playStatus'
 // import { resetPlayerMusicInfo } from '@/core/player/playInfo'
-import { setStop } from '@/plugins/player'
+import { setLoop, setStop } from '@/plugins/player'
 import { delayUpdateMusicInfo } from '@/plugins/player/playList'
 import playerState from '@/store/player/state'
 import settingState from '@/store/setting/state'
@@ -21,12 +21,6 @@ export default async(setting: LX.AppSetting) => {
     // setTimeout(() => {
     if (global.lx.isPlayedStop) {
       setStatusText(global.i18n.t('player__end'))
-      return
-    }
-    if (settingState.setting['player.togglePlayMethod'] == 'singleLoop') {
-      global.app_event.setProgress(0)
-      setStatusText(global.i18n.t('play_single_loop'))
-      void playNext(true)
       return
     }
     // resetPlayerMusicInfo()
@@ -53,6 +47,7 @@ export default async(setting: LX.AppSetting) => {
   const handleConfigUpdated: typeof global.state_event.configUpdated = (keys, settings) => {
     if (keys.includes('player.togglePlayMethod')) {
       const newValue = settings['player.togglePlayMethod']
+      void setLoop(newValue == 'singleLoop')
       if (playerState.playedList.length) clearPlayedList()
       const playMusicInfo = playerState.playMusicInfo
       if (newValue == 'random' && playMusicInfo.musicInfo && !playMusicInfo.isTempPlay) addPlayedList({ ...(playMusicInfo as LX.Player.PlayMusicInfo) })

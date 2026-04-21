@@ -38,8 +38,39 @@ const { MixerModule } = NativeModules as {
       firstBeatOffsetMs: number
       confidence: number
       analyzedDurationMs: number
+      analysisScope?: 'quick' | 'full'
       majorKey: string
       keyConfidence: number
+      keyMode?: 'major' | 'minor'
+      keyTonic?: string
+      highestNote?: string
+      highestMidi?: number
+      highestFreqHz?: number
+      highestTimeMs?: number
+      dominantHighNote?: string
+      dominantLowNote?: string
+      averageNote?: string
+      averageMidi?: number
+      commonHighNote?: string
+      commonHighMidi?: number
+      commonLowNote?: string
+      commonLowMidi?: number
+      lowestNote?: string
+      lowestMidi?: number
+      lowestFreqHz?: number
+      lowestTimeMs?: number
+      timeSignature?: '4/4' | '3/4' | '6/8'
+      waveformSamples?: number[]
+      pitchTrack?: Array<{
+        timeMs: number
+        midi: number
+      }>
+      chordSegments?: Array<{
+        startMs: number
+        endMs: number
+        label: string
+        confidence: number
+      }>
     }>
   }
 }

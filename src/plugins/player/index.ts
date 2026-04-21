@@ -1,5 +1,5 @@
 import TrackPlayer from 'react-native-track-player'
-import { updateOptions, setVolume, setPlaybackRate, setPitch, setKtvVariantGain, migratePlayerCache, startResourceTransition } from './utils'
+import { updateOptions, setVolume, setPlaybackRate, setPitch, setKtvVariantGain, migratePlayerCache, setLoop, startResourceTransition } from './utils'
 import settingState from '@/store/setting/state'
 
 // const listenEvent = () => {
@@ -40,6 +40,7 @@ const initial = async({ volume, playRate, cacheSize, isHandleAudioFocus, isEnabl
   global.lx.playerStatus.isIniting = false
   await updateOptions()
   await setVolume(volume)
+  await setLoop(settingState.setting['player.togglePlayMethod'] == 'singleLoop')
   await setPlaybackRate(playRate)
   await setPitch(settingState.setting['player.pitchSemitones'])
   // listenEvent()
@@ -68,6 +69,7 @@ export {
   setStop,
   resetPlay,
   getPosition,
+  setLoop,
   updateMetaData,
   onStateChange,
   isEmpty,
