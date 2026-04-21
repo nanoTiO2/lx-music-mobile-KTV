@@ -14,6 +14,7 @@ import CommentBtn from './CommentBtn'
 import Btn from './Btn'
 import SettingPopup, { type SettingPopupType } from '../../components/SettingPopup'
 import KeyInfoBtn from '../../components/KeyInfoBtn'
+import SystemVolumeBtn from '../../components/SystemVolumeBtn'
 
 export const HEADER_HEIGHT = scaleSizeH(_HEADER_HEIGHT)
 
@@ -48,6 +49,7 @@ export default memo(() => {
         </TouchableOpacity>
         <Title />
         <KeyInfoBtn direction="horizontal" />
+        <SystemVolumeBtn direction="horizontal" />
         <CommentBtn />
         <Btn icon="slider" onPress={showSetting} />
       </View>

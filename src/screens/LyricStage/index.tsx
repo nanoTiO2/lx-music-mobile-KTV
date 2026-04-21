@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { AppState, FlatList, type FlatListProps, Platform, StatusBar as RNStatusBar, TouchableOpacity, View, Vibration, useWindowDimensions, ScrollView } from 'react-native'
+import { AppState, FlatList, type FlatListProps, StatusBar as RNStatusBar, TouchableOpacity, View, useWindowDimensions, ScrollView } from 'react-native'
 import Text from '@/components/common/Text'
 import { AnimatedColorText } from '@/components/common/Text'
 import Popup, { type PopupType } from '@/components/common/Popup'
@@ -11,7 +11,7 @@ import { useSettingValue } from '@/store/setting/hook'
 import { updateSetting } from '@/core/common'
 import { createStyle, toast } from '@/utils/tools'
 import { setSpText } from '@/utils/pixelRatio'
-import { screenkeepAwake, screenUnkeepAwake, setImmersiveMode, setScreenOrientation } from '@/utils/nativeModules/utils'
+import { screenkeepAwake, screenUnkeepAwake, setImmersiveMode, setScreenOrientation, getSystemVolume, setSystemVolume } from '@/utils/nativeModules/utils'
 import { Icon } from '@/components/common/Icon'
 import { useIsPlay, usePlayMusicInfo, useProgress } from '@/store/player/hook'
 import { useTheme } from '@/store/theme/hook'
@@ -21,6 +21,7 @@ import { setPlaybackRate as setLyricPlaybackRate } from '@/core/lyric'
 import { getCurrentKtvVariant, getKtvOptions, switchKtvVariant, type KtvOption } from '@/core/ktv'
 import { formatPlayTime2 } from '@/utils/common'
 import playerState from '@/store/player/state'
+import { playHaptic } from '@/utils/haptics'
 import {
   LYRIC_STAGE_COLOR_THEMES,
   LYRIC_STAGE_FONT_OPTIONS,
@@ -38,7 +39,7 @@ type ColorTheme = LX.AppSetting['lyricStage.colorTheme']
 type MarqueeSpeed = LX.AppSetting['lyricStage.marqueeSpeed']
 type GlowTheme = LX.AppSetting['lyricStage.textGlowTheme']
 type TextGlowMode = LX.AppSetting['lyricStage.textGlowMode']
-type StageOrientationMode = 'landscape' | 'portrait'
+type StageOrientationMode = 'auto' | 'landscape'
 
 const FONT_OPTIONS = LYRIC_STAGE_FONT_OPTIONS
 const COLOR_THEMES = LYRIC_STAGE_COLOR_THEMES as Record<ColorTheme, (typeof LYRIC_STAGE_COLOR_THEMES)[keyof typeof LYRIC_STAGE_COLOR_THEMES]>
@@ -63,7 +64,6 @@ const GLOW_THEME_LABELS: Record<GlowTheme, string> = {
   rose: '玫',
 }
 
-const BUTTON_FEEDBACK_MS = 12
 const CONTROL_IDLE_MS = 2000
 const RADIAL_MENU_IDLE_MS = 2000
 const POINTER_ACTIVITY_DELAY_MS = 2000
@@ -304,9 +304,13 @@ export default memo(({ componentId }: { componentId: string }) => {
   const [isPlaybackRateSliding, setPlaybackRateSliding] = useState(false)
   const [pitchValue, setPitchValue] = useState(pitchSemitones)
   const [isPitchSliding, setPitchSliding] = useState(false)
-  const [orientationMode, setOrientationMode] = useState<StageOrientationMode>('landscape')
+  const [orientationMode, setOrientationMode] = useState<StageOrientationMode>('auto')
+  const [systemVolume, setSystemVolumeState] = useState(0.5)
+  const [systemVolumeValue, setSystemVolumeValue] = useState(50)
+  const [isSystemVolumeSliding, setSystemVolumeSliding] = useState(false)
   const hideTimerRef = useRef<NodeJS.Timeout | null>(null)
   const radialHideTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const lastDragTickRef = useRef(0)
   const { width, height } = useWindowDimensions()
   const isLandscape = width > height
 
@@ -334,16 +338,14 @@ export default memo(({ componentId }: { componentId: string }) => {
   const displayedSeekValue = isSeeking ? seekValue : nowPlayTime
   const displayedPlaybackRate = isPlaybackRateSliding ? playbackRateValue : Math.trunc(playbackRate * 100)
   const displayedPitch = isPitchSliding ? pitchValue : pitchSemitones
+  const displayedSystemVolume = isSystemVolumeSliding ? systemVolumeValue : Math.round(systemVolume * 100)
   const radialLabelSize = Math.max(10, Math.min(13, width * 0.028))
   const radialHintSize = Math.max(9, Math.min(11, width * 0.024))
   const radialValueSize = Math.max(11, Math.min(13, width * 0.027))
   const radialButtonTextSize = Math.max(11, Math.min(13, width * 0.028))
 
   const triggerButtonFeedback = () => {
-    if (Platform.OS != 'android') return
-    try {
-      Vibration.vibrate(BUTTON_FEEDBACK_MS)
-    } catch {}
+    playHaptic('selection')
   }
 
   const handleAction = (action: () => void) => {
@@ -419,6 +421,14 @@ export default memo(({ componentId }: { componentId: string }) => {
   }, [pitchSemitones])
 
   useEffect(() => {
+    void getSystemVolume().then(value => {
+      const nextValue = Math.max(0, Math.min(1, value))
+      setSystemVolumeState(nextValue)
+      setSystemVolumeValue(Math.round(nextValue * 100))
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
     let canceled = false
     if (!localMusicInfo) {
       setKtvOptions([])
@@ -470,7 +480,7 @@ export default memo(({ componentId }: { componentId: string }) => {
   }
 
   const toggleOrientationMode = () => {
-    setOrientationMode(mode => mode == 'landscape' ? 'portrait' : 'landscape')
+    setOrientationMode(mode => mode == 'landscape' ? 'auto' : 'landscape')
     showControls(CONTROL_IDLE_MS)
   }
 
@@ -578,11 +588,12 @@ export default memo(({ componentId }: { componentId: string }) => {
     const bottomMargin = RADIAL_MENU_SIZE / 2 + RADIAL_PANEL_HEIGHT + 12
     const nextX = Math.max(horizontalMargin, Math.min(width - horizontalMargin, x))
     const nextY = Math.max(topMargin, Math.min(height - bottomMargin, y))
-    if (Platform.OS == 'android') {
-      try {
-        Vibration.vibrate(18)
-      } catch {}
-    }
+    playHaptic('selection')
+    void getSystemVolume().then(value => {
+      const nextValue = Math.max(0, Math.min(1, value))
+      setSystemVolumeState(nextValue)
+      setSystemVolumeValue(Math.round(nextValue * 100))
+    }).catch(() => {})
     setRadialMenu({ visible: true, x: nextX, y: nextY })
     showControls(CONTROL_IDLE_MS)
     scheduleRadialMenuHide(RADIAL_MENU_IDLE_MS)
@@ -636,7 +647,7 @@ export default memo(({ componentId }: { componentId: string }) => {
 
   const handleSeekComplete = (value: number) => {
     setSeeking(false)
-    triggerButtonFeedback()
+    playHaptic('drag')
     scheduleRadialMenuHide()
     global.app_event.setProgress(value, maxPlayTime)
   }
@@ -646,7 +657,7 @@ export default memo(({ componentId }: { componentId: string }) => {
     const rate = parseFloat((nextValue / 100).toFixed(2))
     setPlaybackRateSliding(false)
     setPlaybackRateValue(nextValue)
-    triggerButtonFeedback()
+    playHaptic('drag')
     scheduleRadialMenuHide()
     void setPlayerPlaybackRate(rate)
     void setLyricPlaybackRate(rate)
@@ -677,7 +688,7 @@ export default memo(({ componentId }: { componentId: string }) => {
     const nextValue = Math.trunc(value)
     setPitchSliding(false)
     setPitchValue(nextValue)
-    triggerButtonFeedback()
+    playHaptic('drag')
     scheduleRadialMenuHide()
     void (async() => {
       try {
@@ -710,6 +721,35 @@ export default memo(({ componentId }: { componentId: string }) => {
 
   const stepPitchValue = (delta: number) => {
     applyPitchValue(displayedPitch + delta)
+  }
+
+  const emitDragTick = (value: number, threshold: number) => {
+    const nextTick = Math.round(value / threshold)
+    if (lastDragTickRef.current == nextTick) return
+    lastDragTickRef.current = nextTick
+    playHaptic('drag')
+  }
+
+  const applySystemVolumeValue = (value: number) => {
+    const nextVolume = Math.max(0, Math.min(100, Math.round(value)))
+    setSystemVolumeSliding(false)
+    setSystemVolumeValue(nextVolume)
+    triggerButtonFeedback()
+    scheduleRadialMenuHide()
+    void setSystemVolume(nextVolume / 100).then(result => {
+      const actualVolume = Math.max(0, Math.min(1, result))
+      setSystemVolumeState(actualVolume)
+      setSystemVolumeValue(Math.round(actualVolume * 100))
+    }).catch(() => {})
+  }
+
+  const stepSystemVolumeValue = (delta: number) => {
+    applySystemVolumeValue(displayedSystemVolume + delta)
+  }
+
+  const handleSystemVolumeComplete = (value: number) => {
+    playHaptic('drag')
+    applySystemVolumeValue(value)
   }
 
   const handlePointerActivity = (hideDelayMs: number = POINTER_ACTIVITY_DELAY_MS) => {
@@ -905,7 +945,7 @@ export default memo(({ componentId }: { componentId: string }) => {
                     <Text style={styles.panelLabel} color="rgba(255,255,255,0.58)" size={11}>舞台</Text>
                     <View style={styles.controlGrid}>
                       <TouchableOpacity style={[styles.actionBtn, isLandscape ? styles.actionBtnLandscapeThird : styles.actionBtnThird, { backgroundColor: themeColors.accent }]} onPress={() => { handleAction(toggleOrientationMode) }}>
-                        <Text color="#f6f6f6" size={13}>{orientationMode == 'landscape' ? '切到竖屏' : '切到横屏'}</Text>
+                        <Text color="#f6f6f6" size={13}>{orientationMode == 'landscape' ? '恢复跟随' : '锁定横屏'}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={[styles.actionBtn, isLandscape ? styles.actionBtnLandscapeThird : styles.actionBtnThird, { backgroundColor: themeColors.accent }]} onPress={() => { handleAction(openStageSettingPopup) }}>
                         <Text color="#f6f6f6" size={13}>高级设置</Text>
@@ -1002,10 +1042,12 @@ export default memo(({ componentId }: { componentId: string }) => {
                         onSlidingStart={() => {
                           setSeeking(true)
                           setSeekValue(nowPlayTime)
+                          lastDragTickRef.current = -1
                         }}
                         onValueChange={value => {
                           setSeeking(true)
                           setSeekValue(value)
+                          emitDragTick(value, 5000)
                           handlePointerActivity(POINTER_ACTIVITY_DELAY_MS)
                         }}
                         onSlidingComplete={handleSeekComplete}
@@ -1028,18 +1070,20 @@ export default memo(({ componentId }: { componentId: string }) => {
                         <Text color="#f6f6f6" size={radialButtonTextSize}>+0.1</Text>
                       </TouchableOpacity>
                     </View>
-                    <Slider
-                      minimumValue={60}
-                      maximumValue={200}
-                      onSlidingStart={() => {
-                        setPlaybackRateSliding(true)
-                        setPlaybackRateValue(Math.trunc(playbackRate * 100))
-                      }}
-                      onValueChange={value => {
-                        setPlaybackRateSliding(true)
-                        setPlaybackRateValue(Math.trunc(value))
-                        handlePointerActivity(POINTER_ACTIVITY_DELAY_MS)
-                      }}
+                      <Slider
+                        minimumValue={60}
+                        maximumValue={200}
+                        onSlidingStart={() => {
+                          setPlaybackRateSliding(true)
+                          setPlaybackRateValue(Math.trunc(playbackRate * 100))
+                          lastDragTickRef.current = -1
+                        }}
+                        onValueChange={value => {
+                          setPlaybackRateSliding(true)
+                          setPlaybackRateValue(Math.trunc(value))
+                          emitDragTick(value, 10)
+                          handlePointerActivity(POINTER_ACTIVITY_DELAY_MS)
+                        }}
                       onSlidingComplete={handlePlaybackRateComplete}
                       value={displayedPlaybackRate}
                       step={10}
@@ -1065,14 +1109,49 @@ export default memo(({ componentId }: { componentId: string }) => {
                       onSlidingStart={() => {
                         setPitchSliding(true)
                         setPitchValue(pitchSemitones)
+                        lastDragTickRef.current = -999
                       }}
                       onValueChange={value => {
                         setPitchSliding(true)
                         setPitchValue(Math.trunc(value))
+                        emitDragTick(value, 1)
                         handlePointerActivity(POINTER_ACTIVITY_DELAY_MS)
                       }}
                       onSlidingComplete={handlePitchComplete}
                       value={displayedPitch}
+                      step={1}
+                    />
+                    <View style={styles.radialPanelRow}>
+                      <Text color="#f6f6f6" size={radialValueSize}>系统音量</Text>
+                      <Text color="rgba(255,255,255,0.72)" size={radialValueSize}>{`${displayedSystemVolume}%`}</Text>
+                    </View>
+                    <View style={styles.pitchButtonRow}>
+                      <TouchableOpacity style={styles.pitchButton} onPress={() => { stepSystemVolumeValue(-8) }}>
+                        <Text color="#f6f6f6" size={radialButtonTextSize}>-8%</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.pitchButton} onPress={() => { applySystemVolumeValue(50) }}>
+                        <Text color="#f6f6f6" size={radialButtonTextSize}>50%</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.pitchButton} onPress={() => { stepSystemVolumeValue(8) }}>
+                        <Text color="#f6f6f6" size={radialButtonTextSize}>+8%</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Slider
+                      minimumValue={0}
+                      maximumValue={100}
+                      onSlidingStart={() => {
+                        setSystemVolumeSliding(true)
+                        setSystemVolumeValue(Math.round(systemVolume * 100))
+                        lastDragTickRef.current = -999
+                      }}
+                      onValueChange={value => {
+                        setSystemVolumeSliding(true)
+                        setSystemVolumeValue(Math.round(value))
+                        emitDragTick(value, 8)
+                        handlePointerActivity(POINTER_ACTIVITY_DELAY_MS)
+                      }}
+                      onSlidingComplete={handleSystemVolumeComplete}
+                      value={displayedSystemVolume}
                       step={1}
                     />
                   </View>

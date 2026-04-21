@@ -14,6 +14,12 @@ import { downloadFile, existsFile, mkdir, temporaryDirectoryPath } from '@/utils
 import SettingPitch from './SettingPopup/settings/SettingPitch'
 import SettingPlaybackRate from './SettingPopup/settings/SettingPlaybackRate'
 import ButtonPrimary from '@/components/common/ButtonPrimary'
+import { updateSetting } from '@/core/common'
+import { useSettingValue } from '@/store/setting/hook'
+import { setPitch, setPlaybackRate, updateMetaData } from '@/plugins/player'
+import { setPlaybackRate as setLyricPlaybackRate } from '@/core/lyric'
+import playerState from '@/store/player/state'
+import { playHaptic } from '@/utils/haptics'
 
 const BTN_SIZES = {
   vertical: {
@@ -52,6 +58,8 @@ export default memo(({ direction }: {
   const [onlineAnalyzePath, setOnlineAnalyzePath] = useState('')
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const mountedRef = useRef(true)
+  const pitchSemitones = useSettingValue('player.pitchSemitones')
+  const playbackRate = useSettingValue('player.playbackRate')
   const musicInfo = playMusicInfo.musicInfo && !('progress' in playMusicInfo.musicInfo) ? playMusicInfo.musicInfo : null
   const profilePath = useMemo(() => getMusicProfilePath(musicInfo) || onlineAnalyzePath, [musicInfo, onlineAnalyzePath])
   const latestProfilePathRef = useRef(profilePath)
@@ -135,6 +143,7 @@ export default memo(({ direction }: {
       setProgress(1)
       setEtaMs(0)
       setProfile(result)
+      playHaptic('success')
       toast(getMusicProfilePath(musicInfo) ? '分析完成，结果已写入歌词/缓存' : '分析完成，已缓存在线歌曲调号')
     }).catch(err => {
       if (!mountedRef.current) return
@@ -160,6 +169,52 @@ export default memo(({ direction }: {
   }
 
   const etaText = etaMs > 0 ? `预计剩余 ${Math.max(1, Math.ceil(etaMs / 1000))} 秒` : '即将完成'
+
+  const handlePitchStep = (delta: number) => {
+    const nextValue = Math.max(-12, Math.min(12, pitchSemitones + delta))
+    if (nextValue == pitchSemitones) return
+    playHaptic('selection')
+    void setPitch(nextValue).then(() => {
+      updateSetting({ 'player.pitchSemitones': nextValue })
+    }).catch(() => {
+      toast('升降调设置失败')
+    })
+  }
+
+  const handlePitchReset = () => {
+    if (pitchSemitones == 0) return
+    playHaptic('selection')
+    void setPitch(0).then(() => {
+      updateSetting({ 'player.pitchSemitones': 0 })
+    }).catch(() => {
+      toast('升降调设置失败')
+    })
+  }
+
+  const handlePlaybackRateStep = (delta: number) => {
+    const nextRate = Math.max(0.6, Math.min(2, parseFloat((playbackRate + delta).toFixed(2))))
+    if (nextRate == playbackRate) return
+    playHaptic('selection')
+    void setPlaybackRate(nextRate).then(() => {
+      void setLyricPlaybackRate(nextRate)
+      void updateMetaData(playerState.musicInfo, playerState.isPlay, playerState.lastLyric, true)
+      updateSetting({ 'player.playbackRate': nextRate })
+    }).catch(() => {
+      toast('播放速率设置失败')
+    })
+  }
+
+  const handlePlaybackRateReset = () => {
+    if (playbackRate == 1) return
+    playHaptic('selection')
+    void setPlaybackRate(1).then(() => {
+      void setLyricPlaybackRate(1)
+      void updateMetaData(playerState.musicInfo, playerState.isPlay, playerState.lastLyric, true)
+      updateSetting({ 'player.playbackRate': 1 })
+    }).catch(() => {
+      toast('播放速率设置失败')
+    })
+  }
 
   return (
     <>
@@ -216,8 +271,36 @@ export default memo(({ direction }: {
               <View style={{ ...styles.row, borderBottomColor: theme['c-border-background'] }}>
                 <Text style={styles.rowIndex}>4.</Text>
                 <Text style={styles.rowLabel}>升降调</Text>
+                <Text color={theme['c-font-label']}>{`${pitchSemitones > 0 ? '+' : ''}${pitchSemitones} st`}</Text>
+              </View>
+              <View style={styles.quickBtnRow}>
+                <TouchableOpacity style={styles.quickBtn} onPress={() => { handlePitchStep(-1) }}>
+                  <Text color="#f6f6f6" size={13}>-1</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.quickBtn} onPress={handlePitchReset}>
+                  <Text color="#f6f6f6" size={13}>复位</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.quickBtn} onPress={() => { handlePitchStep(1) }}>
+                  <Text color="#f6f6f6" size={13}>+1</Text>
+                </TouchableOpacity>
               </View>
               <SettingPitch />
+              <View style={{ ...styles.row, borderBottomColor: theme['c-border-background'] }}>
+                <Text style={styles.rowIndex}>5.</Text>
+                <Text style={styles.rowLabel}>播放速率</Text>
+                <Text color={theme['c-font-label']}>{`${playbackRate.toFixed(2)}x`}</Text>
+              </View>
+              <View style={styles.quickBtnRow}>
+                <TouchableOpacity style={styles.quickBtn} onPress={() => { handlePlaybackRateStep(-0.1) }}>
+                  <Text color="#f6f6f6" size={13}>-0.1</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.quickBtn} onPress={handlePlaybackRateReset}>
+                  <Text color="#f6f6f6" size={13}>复位</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.quickBtn} onPress={() => { handlePlaybackRateStep(0.1) }}>
+                  <Text color="#f6f6f6" size={13}>+0.1</Text>
+                </TouchableOpacity>
+              </View>
               <SettingPlaybackRate />
             </View>
           </ScrollView>
@@ -272,5 +355,19 @@ const styles = createStyle({
   progressBarActive: {
     height: '100%',
     borderRadius: 999,
+  },
+  quickBtnRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  quickBtn: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
 })

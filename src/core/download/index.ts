@@ -11,6 +11,7 @@ import { log } from '@/utils/log'
 import { getListMusicSync } from '@/utils/listManage'
 import { buildLyrics } from '@/utils/lrcTools'
 import { toast } from '@/utils/tools'
+import { playHaptic } from '@/utils/haptics'
 
 
 const DEFAULT_DOWNLOAD_DIR = `${externalStorageDirectoryPath}/Download/lxmusic`
@@ -366,6 +367,7 @@ export const startDownloadTask = async(taskId: string) => {
     void importDownloadedMusicToDownloadList(filePath).catch((err: any) => {
       log.warn('import downloaded music failed', filePath, err?.message ?? err)
     })
+    playHaptic('success')
     toast('下载完成')
     return completedTask
   } catch (err: any) {

@@ -7,11 +7,13 @@ import CommentBtn from './CommentBtn'
 import KtvBtn from '@/screens/PlayDetail/components/KtvBtn'
 import LyricStageBtn from '@/screens/PlayDetail/components/LyricStageBtn'
 import KeyInfoBtn from '@/screens/PlayDetail/components/KeyInfoBtn'
+import SystemVolumeBtn from '@/screens/PlayDetail/components/SystemVolumeBtn'
 
 export default () => {
   return (
     <View style={styles.container}>
       <KeyInfoBtn direction="vertical" />
+      <SystemVolumeBtn direction="vertical" />
       <LyricStageBtn direction="vertical" />
       <KtvBtn direction="vertical" />
       <DownloadBtn />

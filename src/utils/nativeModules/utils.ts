@@ -107,3 +107,19 @@ export const setImmersiveMode = async(enabled: boolean): Promise<void> => {
 export const setScreenOrientation = async(orientation: 'portrait' | 'landscape' | 'auto'): Promise<void> => {
   await UtilsModule.setScreenOrientation(orientation)
 }
+
+export const getSystemVolume = async(): Promise<number> => {
+  return UtilsModule.getSystemVolume()
+}
+
+export const setSystemVolume = async(volume: number): Promise<number> => {
+  return UtilsModule.setSystemVolume(volume)
+}
+
+export const adjustSystemVolume = async(delta: number): Promise<number> => {
+  return UtilsModule.adjustSystemVolume(delta)
+}
+
+export const playHaptic = async(kind: 'selection' | 'play' | 'pause' | 'next' | 'success' | 'drag'): Promise<void> => {
+  await UtilsModule.playHaptic(kind)
+}

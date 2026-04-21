@@ -2,6 +2,7 @@ package cn.toside.music.mobile.utils;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.media.AudioManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -12,6 +13,9 @@ import android.net.Uri;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.util.Log;
 import android.view.View;
 import android.view.Window;
@@ -450,5 +454,104 @@ public class UtilsModule extends ReactContextBaseJavaModule {
         promise.reject("SCREEN_ORIENTATION_FAILED", e);
       }
     });
+  }
+
+  @ReactMethod
+  public void getSystemVolume(Promise promise) {
+    try {
+      AudioManager audioManager = (AudioManager) reactContext.getSystemService(Context.AUDIO_SERVICE);
+      if (audioManager == null) {
+        promise.resolve(0d);
+        return;
+      }
+      int maxVolume = Math.max(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC), 1);
+      int currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+      promise.resolve((double) currentVolume / maxVolume);
+    } catch (Exception e) {
+      promise.reject("GET_SYSTEM_VOLUME_FAILED", e);
+    }
+  }
+
+  @ReactMethod
+  public void setSystemVolume(double volume, Promise promise) {
+    try {
+      AudioManager audioManager = (AudioManager) reactContext.getSystemService(Context.AUDIO_SERVICE);
+      if (audioManager == null) {
+        promise.resolve(false);
+        return;
+      }
+      int maxVolume = Math.max(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC), 1);
+      int targetVolume = Math.max(0, Math.min(maxVolume, (int) Math.round(volume * maxVolume)));
+      audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0);
+      promise.resolve((double) targetVolume / maxVolume);
+    } catch (Exception e) {
+      promise.reject("SET_SYSTEM_VOLUME_FAILED", e);
+    }
+  }
+
+  @ReactMethod
+  public void adjustSystemVolume(double delta, Promise promise) {
+    try {
+      AudioManager audioManager = (AudioManager) reactContext.getSystemService(Context.AUDIO_SERVICE);
+      if (audioManager == null) {
+        promise.resolve(false);
+        return;
+      }
+      int maxVolume = Math.max(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC), 1);
+      int currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+      int targetVolume = Math.max(0, Math.min(maxVolume, currentVolume + (int) Math.round(delta * maxVolume)));
+      audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0);
+      promise.resolve((double) targetVolume / maxVolume);
+    } catch (Exception e) {
+      promise.reject("ADJUST_SYSTEM_VOLUME_FAILED", e);
+    }
+  }
+
+  @ReactMethod
+  public void playHaptic(String kind, Promise promise) {
+    try {
+      long[] pattern = buildHapticPattern(kind);
+      if (pattern.length <= 1) {
+        promise.resolve(false);
+        return;
+      }
+      Vibrator vibrator;
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        VibratorManager vibratorManager = reactContext.getSystemService(VibratorManager.class);
+        vibrator = vibratorManager == null ? null : vibratorManager.getDefaultVibrator();
+      } else {
+        vibrator = (Vibrator) reactContext.getSystemService(Context.VIBRATOR_SERVICE);
+      }
+      if (vibrator == null || !vibrator.hasVibrator()) {
+        promise.resolve(false);
+        return;
+      }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1));
+      } else {
+        vibrator.vibrate(pattern, -1);
+      }
+      promise.resolve(true);
+    } catch (Exception e) {
+      promise.reject("PLAY_HAPTIC_FAILED", e);
+    }
+  }
+
+  private long[] buildHapticPattern(String kind) {
+    switch (kind) {
+      case "play":
+        return new long[] { 0L, 18L, 18L, 10L };
+      case "pause":
+        return new long[] { 0L, 18L, 26L, 18L };
+      case "next":
+        return new long[] { 0L, 14L, 16L, 18L };
+      case "success":
+        return new long[] { 0L, 18L, 18L, 22L };
+      case "drag":
+        return new long[] { 0L, 8L };
+      case "selection":
+      default:
+        return new long[] { 0L, 14L };
+    }
   }
 }
