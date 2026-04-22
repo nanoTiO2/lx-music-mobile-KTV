@@ -1296,6 +1296,15 @@ public class MixerModule extends ReactContextBaseJavaModule {
       mode
     );
     refinedChordSeries = suppressIsolatedBeatFlutters(refinedChordSeries, beatCandidateScores);
+    refinedChordSeries = limitChordChangesWithinBars(
+      refinedChordSeries,
+      beatCandidateScores,
+      bestMeter,
+      meterScore.bestShift,
+      keyRoot,
+      mode
+    );
+    refinedChordSeries = suppressIsolatedBeatFlutters(refinedChordSeries, beatCandidateScores);
     result.segments = buildBeatAlignedSegments(refinedChordSeries, beatTimes);
     return result;
   }
@@ -1320,39 +1329,30 @@ public class MixerModule extends ReactContextBaseJavaModule {
     if (segments.isEmpty() || beatTimes.isEmpty()) return chordSeries;
 
     String[] beatLabels = new String[Math.max(0, beatTimes.size() - 1)];
-    for (int i = 0; i < beatLabels.length; i++) beatLabels[i] = "N";
+    Arrays.fill(beatLabels, "N");
 
-    for (int beatIndex = 0; beatIndex < beatLabels.length; beatIndex++) {
-      long beatStartMs = beatTimes.get(beatIndex);
-      long beatEndMs = beatTimes.get(beatIndex + 1);
-      long beatCenterMs = (beatStartMs + beatEndMs) / 2L;
-      ChordSegment bestSegment = null;
-      long bestOverlapMs = 0L;
-      long bestCenterDistanceMs = Long.MAX_VALUE;
-      for (ChordSegment segment : segments) {
-        long overlapStart = Math.max(beatStartMs, segment.startMs);
-        long overlapEnd = Math.min(beatEndMs, segment.endMs);
-        long overlapMs = overlapEnd - overlapStart;
-        long segmentCenterMs = (segment.startMs + segment.endMs) / 2L;
-        long centerDistanceMs = Math.abs(segmentCenterMs - beatCenterMs);
-        if (overlapMs > bestOverlapMs || (overlapMs == bestOverlapMs && centerDistanceMs < bestCenterDistanceMs)) {
-          bestOverlapMs = overlapMs;
-          bestSegment = segment;
-          bestCenterDistanceMs = centerDistanceMs;
+    int beatIndex = 0;
+    for (ChordSegment segment : segments) {
+      if (segment == null || !isValidChordLabel(segment.label)) continue;
+      long chordStartMs = segment.startMs;
+      long beatDurationMs = 0L;
+      if (beatIndex < beatTimes.size() - 2) {
+        beatDurationMs = beatTimes.get(beatIndex + 1) - beatTimes.get(beatIndex);
+      } else if (beatIndex > 0 && beatIndex < beatTimes.size() - 1) {
+        beatDurationMs = beatTimes.get(beatIndex) - beatTimes.get(beatIndex - 1);
+      } else if (beatTimes.size() >= 2) {
+        beatDurationMs = beatTimes.get(1) - beatTimes.get(0);
+      }
+      while (
+        beatIndex < beatTimes.size() - 2 &&
+        beatTimes.get(beatIndex + 1) - beatDurationMs * 0.35 <= chordStartMs
+      ) {
+        beatIndex++;
+        if (beatIndex < beatTimes.size() - 2) {
+          beatDurationMs = beatTimes.get(beatIndex + 1) - beatTimes.get(beatIndex);
         }
       }
-      if (bestSegment == null || bestOverlapMs <= 0L) {
-        bestCenterDistanceMs = Long.MAX_VALUE;
-        for (ChordSegment segment : segments) {
-          long segmentCenterMs = (segment.startMs + segment.endMs) / 2L;
-          long centerDistanceMs = Math.abs(segmentCenterMs - beatCenterMs);
-          if (centerDistanceMs < bestCenterDistanceMs) {
-            bestCenterDistanceMs = centerDistanceMs;
-            bestSegment = segment;
-          }
-        }
-      }
-      if (bestSegment != null) beatLabels[beatIndex] = bestSegment.label;
+      if (beatIndex >= 0 && beatIndex < beatLabels.length) beatLabels[beatIndex] = segment.label;
     }
 
     String lastLabel = "N";
@@ -1415,13 +1415,13 @@ public class MixerModule extends ReactContextBaseJavaModule {
     double structuralScore = computeDiatonicBonus(candidate.root, candidate.suffix, keyRoot, mode);
     int majorSystemRoot = "minor".equals(mode) ? (keyRoot + 3) % 12 : keyRoot;
     int degree = (candidate.root - majorSystemRoot + 12) % 12;
-    double bonus = structuralScore * (isDownbeat ? 0.52 : isStrongBeat ? 0.28 : 0.14);
+    double bonus = structuralScore * (isDownbeat ? 0.34 : isStrongBeat ? 0.19 : 0.08);
     if (isDownbeat) {
-      if (degree == 0 || degree == 7) bonus += 0.08;
-      else if (degree == 9) bonus += 0.05;
-      else if (degree == 1 || degree == 3 || degree == 6 || degree == 8 || degree == 10) bonus -= 0.04;
+      if (degree == 0 || degree == 7) bonus += 0.05;
+      else if (degree == 9) bonus += 0.03;
+      else if (degree == 1 || degree == 3 || degree == 6 || degree == 8 || degree == 10) bonus -= 0.025;
     } else if (isStrongBeat) {
-      if (degree == 5 || degree == 2) bonus += 0.04;
+      if (degree == 5 || degree == 2) bonus += 0.025;
     }
     return bonus;
   }
@@ -1585,6 +1585,158 @@ public class MixerModule extends ReactContextBaseJavaModule {
       }
     }
     return normalized;
+  }
+
+  private List<String> limitChordChangesWithinBars(
+    List<String> chordSeries,
+    List<Map<String, Double>> beatCandidateScores,
+    int timeSignature,
+    int beatShift,
+    int keyRoot,
+    String mode
+  ) {
+    if (chordSeries.isEmpty() || beatCandidateScores.isEmpty() || timeSignature <= 1) return chordSeries;
+
+    List<String> normalized = new ArrayList<>(chordSeries);
+    int maxChangesPerBar = timeSignature >= 4 ? 2 : 1;
+
+    boolean changed = true;
+    int guard = 0;
+    while (changed && guard < normalized.size()) {
+      changed = false;
+      guard += 1;
+      for (int barStart = 0; barStart < normalized.size(); barStart += timeSignature) {
+        int barEnd = Math.min(normalized.size(), barStart + timeSignature);
+        int barChangeCount = countChordChanges(normalized, barStart, barEnd);
+        if (barChangeCount <= maxChangesPerBar) continue;
+
+        int weakestRunStart = findWeakestRunStartInBar(
+          normalized,
+          beatCandidateScores,
+          barStart,
+          barEnd,
+          timeSignature,
+          beatShift,
+          keyRoot,
+          mode
+        );
+        if (weakestRunStart < 0) continue;
+        collapseRunTowardNeighbor(normalized, beatCandidateScores, weakestRunStart, keyRoot, mode);
+        changed = true;
+      }
+    }
+
+    return normalized;
+  }
+
+  private int countChordChanges(List<String> chordSeries, int start, int end) {
+    int changes = 0;
+    for (int i = Math.max(1, start); i < end; i++) {
+      if (!chordSeries.get(i).equals(chordSeries.get(i - 1))) changes += 1;
+    }
+    return changes;
+  }
+
+  private int findWeakestRunStartInBar(
+    List<String> chordSeries,
+    List<Map<String, Double>> beatCandidateScores,
+    int barStart,
+    int barEnd,
+    int timeSignature,
+    int beatShift,
+    int keyRoot,
+    String mode
+  ) {
+    int weakestRunStart = -1;
+    double weakestScore = Double.POSITIVE_INFINITY;
+
+    int index = barStart;
+    while (index < barEnd) {
+      int runStart = index;
+      String label = chordSeries.get(runStart);
+      while (index < barEnd && chordSeries.get(index).equals(label)) index += 1;
+      int runEnd = index;
+
+      String previousLabel = runStart > 0 ? chordSeries.get(runStart - 1) : null;
+      String nextLabel = runEnd < chordSeries.size() ? chordSeries.get(runEnd) : null;
+      if (previousLabel == null && nextLabel == null) continue;
+      if (previousLabel == null || nextLabel == null) continue;
+      if (!isValidChordLabel(label)) continue;
+
+      int posInBar = ((runStart - beatShift) % timeSignature + timeSignature) % timeSignature;
+      boolean isDownbeat = posInBar == 0;
+      boolean isStrongBeat = isDownbeat || (timeSignature == 4 && posInBar == 2);
+      double currentSupport = computeAverageCandidateScore(beatCandidateScores, runStart, runEnd, label);
+      double previousSupport = computeAverageCandidateScore(beatCandidateScores, runStart, runEnd, previousLabel);
+      double nextSupport = computeAverageCandidateScore(beatCandidateScores, runStart, runEnd, nextLabel);
+      double competitorSupport = Math.max(previousSupport, nextSupport);
+      double retentionScore = currentSupport - competitorSupport;
+      retentionScore += (runEnd - runStart) * 0.06;
+      if (isDownbeat) retentionScore += 0.18;
+      else if (isStrongBeat) retentionScore += 0.08;
+      else retentionScore -= 0.04;
+      retentionScore += Math.max(
+        computeTransitionBonusByLabel(previousLabel, label, keyRoot, mode),
+        computeTransitionBonusByLabel(label, nextLabel, keyRoot, mode)
+      ) * 0.35;
+
+      if (retentionScore < weakestScore) {
+        weakestScore = retentionScore;
+        weakestRunStart = runStart;
+      }
+    }
+    return weakestRunStart;
+  }
+
+  private double computeAverageCandidateScore(
+    List<Map<String, Double>> beatCandidateScores,
+    int start,
+    int end,
+    String label
+  ) {
+    if (label == null || start >= end) return Double.NEGATIVE_INFINITY;
+    double total = 0.0;
+    int count = 0;
+    for (int i = Math.max(0, start); i < Math.min(end, beatCandidateScores.size()); i++) {
+      double score = getBeatCandidateBaseScore(beatCandidateScores.get(i), label);
+      if (!Double.isFinite(score)) continue;
+      total += score;
+      count += 1;
+    }
+    return count == 0 ? Double.NEGATIVE_INFINITY : total / count;
+  }
+
+  private void collapseRunTowardNeighbor(
+    List<String> chordSeries,
+    List<Map<String, Double>> beatCandidateScores,
+    int runStart,
+    int keyRoot,
+    String mode
+  ) {
+    if (runStart < 0 || runStart >= chordSeries.size()) return;
+    String label = chordSeries.get(runStart);
+    int runEnd = runStart + 1;
+    while (runEnd < chordSeries.size() && chordSeries.get(runEnd).equals(label)) runEnd += 1;
+
+    String previousLabel = runStart > 0 ? chordSeries.get(runStart - 1) : null;
+    String nextLabel = runEnd < chordSeries.size() ? chordSeries.get(runEnd) : null;
+    if (previousLabel == null && nextLabel == null) return;
+
+    double previousScore = previousLabel == null
+      ? Double.NEGATIVE_INFINITY
+      : computeAverageCandidateScore(beatCandidateScores, runStart, runEnd, previousLabel)
+        + computeTransitionBonusByLabel(previousLabel, nextLabel == null ? previousLabel : nextLabel, keyRoot, mode) * 0.2;
+    double nextScore = nextLabel == null
+      ? Double.NEGATIVE_INFINITY
+      : computeAverageCandidateScore(beatCandidateScores, runStart, runEnd, nextLabel)
+        + computeTransitionBonusByLabel(previousLabel == null ? nextLabel : previousLabel, nextLabel, keyRoot, mode) * 0.2;
+    String replacement = previousScore >= nextScore ? previousLabel : nextLabel;
+    if (replacement == null) replacement = previousLabel != null ? previousLabel : nextLabel;
+    if (replacement == null || replacement.equals(label)) return;
+
+    for (int i = runStart; i < runEnd; i++) {
+      chordSeries.set(i, replacement);
+    }
   }
 
   private int chooseBestMeter(List<String> chordSeries) {
