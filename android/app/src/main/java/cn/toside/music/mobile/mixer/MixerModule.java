@@ -412,6 +412,7 @@ public class MixerModule extends ReactContextBaseJavaModule {
             WritableMap frameMap = Arguments.createMap();
             frameMap.putDouble("timeMs", frame.timeMs);
             frameMap.putDouble("midi", frame.midi);
+            frameMap.putDouble("weight", frame.weight);
             pitchTrackArray.pushMap(frameMap);
           }
           result.putArray("pitchTrack", pitchTrackArray);
@@ -800,6 +801,7 @@ public class MixerModule extends ReactContextBaseJavaModule {
     if (!analysis.chordSegments.isEmpty()) {
       BeatAlignedChordResult beatAlignedChordResult = alignChordSegmentsToBeatGrid(
         analysis.chordSegments,
+        segmentPitchClasses,
         beatAnalysis,
         analysis.analyzedDurationMs,
         bestKey,
@@ -1256,6 +1258,7 @@ public class MixerModule extends ReactContextBaseJavaModule {
 
   private BeatAlignedChordResult alignChordSegmentsToBeatGrid(
     List<ChordSegment> segments,
+    List<SegmentPitchClassData> segmentPitchClasses,
     BeatAnalysis beatAnalysis,
     long analyzedDurationMs,
     int keyRoot,
@@ -1281,6 +1284,7 @@ public class MixerModule extends ReactContextBaseJavaModule {
     result.timeSignature = bestMeter == 3 ? "3/4" : "4/4";
     List<Map<String, Double>> beatCandidateScores = buildBeatCandidateScores(
       segments,
+      segmentPitchClasses,
       beatTimes,
       bestMeter,
       meterScore.bestShift,
@@ -1366,6 +1370,7 @@ public class MixerModule extends ReactContextBaseJavaModule {
 
   private List<Map<String, Double>> buildBeatCandidateScores(
     List<ChordSegment> segments,
+    List<SegmentPitchClassData> segmentPitchClasses,
     List<Long> beatTimes,
     int timeSignature,
     int beatShift,
@@ -1382,6 +1387,8 @@ public class MixerModule extends ReactContextBaseJavaModule {
       boolean isDownbeat = posInBar == 0;
       boolean isStrongBeat = isDownbeat || (timeSignature == 4 && posInBar == 2);
       Map<String, Double> scoreMap = new HashMap<>();
+      double[] beatPitchClassEnergy = buildBeatPitchClassEnergy(segmentPitchClasses, beatStartMs, beatEndMs);
+      addBeatPitchCandidates(scoreMap, beatPitchClassEnergy, keyRoot, mode, isDownbeat, isStrongBeat);
 
       for (ChordSegment segment : segments) {
         long overlapStart = Math.max(beatStartMs, segment.startMs);
@@ -1407,6 +1414,53 @@ public class MixerModule extends ReactContextBaseJavaModule {
       beatCandidateScores.add(scoreMap);
     }
     return beatCandidateScores;
+  }
+
+  private double[] buildBeatPitchClassEnergy(List<SegmentPitchClassData> segmentPitchClasses, long beatStartMs, long beatEndMs) {
+    double[] energy = new double[12];
+    if (segmentPitchClasses == null || segmentPitchClasses.isEmpty() || beatEndMs <= beatStartMs) return energy;
+    for (SegmentPitchClassData segment : segmentPitchClasses) {
+      if (segment == null || segment.pitchClassEnergy == null || segment.pitchClassEnergy.length < 12) continue;
+      long overlapStart = Math.max(beatStartMs, segment.startMs);
+      long overlapEnd = Math.min(beatEndMs, segment.endMs);
+      long overlapMs = overlapEnd - overlapStart;
+      if (overlapMs <= 0L) continue;
+      double ratio = overlapMs / (double) Math.max(1L, segment.endMs - segment.startMs);
+      if (ratio <= 0.0) continue;
+      for (int pc = 0; pc < 12; pc++) {
+        energy[pc] += segment.pitchClassEnergy[pc] * ratio;
+      }
+    }
+    return energy;
+  }
+
+  private void addBeatPitchCandidates(
+    Map<String, Double> scoreMap,
+    double[] beatPitchClassEnergy,
+    int keyRoot,
+    String mode,
+    boolean isDownbeat,
+    boolean isStrongBeat
+  ) {
+    double total = sumPitchEnergy(beatPitchClassEnergy);
+    if (total <= 1e-6) return;
+    int[][] simpleTemplates = new int[][] {
+      {0, 4, 7},
+      {0, 3, 7},
+      {0, 3, 6},
+    };
+    String[] simpleSuffixes = new String[] {"", "m", "dim"};
+    for (int root = 0; root < 12; root++) {
+      for (int index = 0; index < simpleTemplates.length; index++) {
+        String label = NOTE_LABELS[root] + simpleSuffixes[index];
+        double score = scoreChordCandidate(beatPitchClassEnergy, root, simpleTemplates[index], simpleSuffixes[index], keyRoot, mode);
+        if (!Double.isFinite(score)) continue;
+        score += computeBeatPlacementBonus(label, keyRoot, mode, isDownbeat, isStrongBeat);
+        score += Math.min(0.28, total * 0.08);
+        Double existing = scoreMap.get(label);
+        if (existing == null || score > existing) scoreMap.put(label, score);
+      }
+    }
   }
 
   private double computeBeatPlacementBonus(String label, int keyRoot, String mode, boolean isDownbeat, boolean isStrongBeat) {

@@ -64,6 +64,7 @@ const { MixerModule } = NativeModules as {
       pitchTrack?: Array<{
         timeMs: number
         midi: number
+        weight?: number
       }>
       chordSegments?: Array<{
         startMs: number

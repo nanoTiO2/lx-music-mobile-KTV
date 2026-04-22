@@ -72,6 +72,14 @@ const buildCoverPath = (filePath: string) => {
   return dotIndex > -1 ? `${filePath.substring(0, dotIndex)}.cover.jpg` : `${filePath}.cover.jpg`
 }
 
+const normalizeLocalUri = (uri: string) => {
+  try {
+    return encodeURI(uri)
+  } catch {
+    return uri
+  }
+}
+
 const getCoverEmbedStatus = (task: LX.Download.ListItem | null | undefined) => task?.metadata.coverEmbedStatus ?? 'idle'
 const shouldAutoEmbedCover = (task: LX.Download.ListItem | null | undefined) => {
   const status = getCoverEmbedStatus(task)
@@ -168,19 +176,20 @@ export const importDownloadedMusicToDownloadList = async(filePath: string) => {
   if (!metadata) return null
   const tasks = await getStoredDownloadTasks()
   const task = tasks.find(item => item.metadata.filePath == filePath)
-  let picUrl = await readPic(filePath).catch(() => '')
-  if (!picUrl) {
-    const coverPath = buildCoverPath(filePath)
-    if (await existsFile(coverPath).catch(() => false)) {
-      picUrl = `file://${coverPath}`
-      if (shouldAutoEmbedCover(task)) {
-        void tryEmbedCoverToAudio({ filePath, coverPath }).catch((err: any) => {
-          log.warn('embed download cover failed', filePath, err?.message ?? err)
-        })
-      }
+  const coverPath = buildCoverPath(filePath)
+  let picUrl = ''
+  if (await existsFile(coverPath).catch(() => false)) {
+    picUrl = normalizeLocalUri(`file://${coverPath}`)
+    if (shouldAutoEmbedCover(task)) {
+      void tryEmbedCoverToAudio({ filePath, coverPath }).catch((err: any) => {
+        log.warn('embed download cover failed', filePath, err?.message ?? err)
+      })
     }
+  } else {
+    picUrl = await readPic(filePath).catch(() => '')
   }
   if (picUrl.startsWith('/')) picUrl = `file://${picUrl}`
+  if (picUrl.startsWith('file://') || picUrl.startsWith('content://')) picUrl = normalizeLocalUri(picUrl)
   const musicInfo = buildLocalMusicInfo(filePath, metadata, picUrl)
   const targetListId = LIST_IDS.DOWNLOAD
   const list = getListMusicSync(targetListId)
@@ -200,23 +209,24 @@ export const syncDownloadedList = async() => {
     if (!await existsFile(task.metadata.filePath)) continue
     const metadata = await readMetadata(task.metadata.filePath)
     if (!metadata) continue
-    let picUrl = await readPic(task.metadata.filePath).catch(() => '')
-    if (!picUrl) {
-      const coverPath = buildCoverPath(task.metadata.filePath)
-      if (await existsFile(coverPath).catch(() => false)) {
-        picUrl = `file://${coverPath}`
-        if (shouldAutoEmbedCover(task)) {
-          void tryEmbedCoverToAudio({
-            filePath: task.metadata.filePath,
-            coverPath,
-            taskId: task.id,
-          }).catch((err: any) => {
-            log.warn('embed synced download cover failed', task.metadata.filePath, err?.message ?? err)
-          })
-        }
+    const coverPath = buildCoverPath(task.metadata.filePath)
+    let picUrl = ''
+    if (await existsFile(coverPath).catch(() => false)) {
+      picUrl = normalizeLocalUri(`file://${coverPath}`)
+      if (shouldAutoEmbedCover(task)) {
+        void tryEmbedCoverToAudio({
+          filePath: task.metadata.filePath,
+          coverPath,
+          taskId: task.id,
+        }).catch((err: any) => {
+          log.warn('embed synced download cover failed', task.metadata.filePath, err?.message ?? err)
+        })
       }
+    } else {
+      picUrl = await readPic(task.metadata.filePath).catch(() => '')
     }
     if (picUrl.startsWith('/')) picUrl = `file://${picUrl}`
+    if (picUrl.startsWith('file://') || picUrl.startsWith('content://')) picUrl = normalizeLocalUri(picUrl)
     localMusicList.push(buildLocalMusicInfo(task.metadata.filePath, metadata, picUrl))
   }
   await overwriteListMusics(LIST_IDS.DOWNLOAD, localMusicList)
@@ -382,6 +392,7 @@ const saveTaskLyric = async(task: LX.Download.ListItem) => {
 const saveTaskCover = async(task: LX.Download.ListItem) => {
   const coverPath = buildCoverPath(task.metadata.filePath)
   if (await existsFile(coverPath).catch(() => false)) {
+    task.metadata.musicInfo.meta.picUrl = normalizeLocalUri(`file://${coverPath}`)
     if (shouldAutoEmbedCover(task)) {
       await tryEmbedCoverToAudio({
         filePath: task.metadata.filePath,
@@ -407,6 +418,7 @@ const saveTaskCover = async(task: LX.Download.ListItem) => {
     readTimeout: 20000,
   })
   await result.promise
+  task.metadata.musicInfo.meta.picUrl = normalizeLocalUri(`file://${coverPath}`)
   if (shouldAutoEmbedCover(task)) {
     await tryEmbedCoverToAudio({
       filePath: task.metadata.filePath,

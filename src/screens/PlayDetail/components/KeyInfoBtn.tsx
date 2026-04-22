@@ -533,7 +533,7 @@ const buildPitchSlots = (
       let scanIndex = frameIndex
       while (scanIndex < pitchTrack.length && pitchTrack[scanIndex].timeMs < endMs) {
         const midi = Math.round(pitchTrack[scanIndex].midi)
-        const weight = 0.1
+        const weight = Math.max(0.05, pitchTrack[scanIndex].weight ?? 0.12)
         energyMap.set(midi, (energyMap.get(midi) || 0) + weight)
         scanIndex += 1
       }
@@ -625,7 +625,7 @@ const buildBeatLyricFragments = (text: string, beatCount: number) => {
 }
 
 const buildJianpuMeasureText = (block: SheetBlock) => {
-  const notes = block.beats.map(beat => beat.jianpuText || '-')
+  const notes = block.beats.map(beat => (beat.jianpuText || '--').replace(/0/g, '·'))
   return `${block.label} | ${notes.join(' ')} |`
 }
 

@@ -30,6 +30,7 @@ export interface PortableMusicProfile {
   pitchTrack?: Array<{
     timeMs: number
     midi: number
+    weight?: number
   }>
   chordSegments?: Array<{
     startMs: number
@@ -102,6 +103,7 @@ export const normalizePortableMusicProfile = (data: Partial<StoredPortableMusicP
         .map(item => ({
           timeMs: item.timeMs,
           midi: item.midi,
+          weight: typeof item.weight == 'number' ? item.weight : undefined,
         }))
       : undefined,
     chordSegments: Array.isArray(data.chordSegments)
