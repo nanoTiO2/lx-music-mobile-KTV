@@ -55,6 +55,9 @@ declare namespace LX {
         ext: FileExt
         fileName: string
         filePath: string
+        coverEmbedStatus?: 'idle' | 'embedded' | 'failed'
+        coverEmbedError?: string | null
+        coverEmbedUpdatedAt?: number
       }
     }
 

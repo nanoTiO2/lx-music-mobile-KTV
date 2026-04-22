@@ -72,6 +72,73 @@ const buildCoverPath = (filePath: string) => {
   return dotIndex > -1 ? `${filePath.substring(0, dotIndex)}.cover.jpg` : `${filePath}.cover.jpg`
 }
 
+const getCoverEmbedStatus = (task: LX.Download.ListItem | null | undefined) => task?.metadata.coverEmbedStatus ?? 'idle'
+const shouldAutoEmbedCover = (task: LX.Download.ListItem | null | undefined) => {
+  const status = getCoverEmbedStatus(task)
+  return status != 'embedded' && status != 'failed'
+}
+
+const updateTaskCoverEmbedStateById = async(taskId: string, partial: Pick<LX.Download.ListItem['metadata'], 'coverEmbedStatus' | 'coverEmbedError' | 'coverEmbedUpdatedAt'>) => {
+  const tasks = await getStoredDownloadTasks()
+  const index = tasks.findIndex(task => task.id == taskId)
+  if (index < 0) return null
+  tasks[index] = {
+    ...tasks[index],
+    metadata: {
+      ...tasks[index].metadata,
+      ...partial,
+    },
+  }
+  await saveStoredDownloadTasks(tasks)
+  return tasks[index]
+}
+
+const updateTaskCoverEmbedStateByFilePath = async(filePath: string, partial: Pick<LX.Download.ListItem['metadata'], 'coverEmbedStatus' | 'coverEmbedError' | 'coverEmbedUpdatedAt'>) => {
+  const tasks = await getStoredDownloadTasks()
+  const index = tasks.findIndex(task => task.metadata.filePath == filePath)
+  if (index < 0) return null
+  tasks[index] = {
+    ...tasks[index],
+    metadata: {
+      ...tasks[index].metadata,
+      ...partial,
+    },
+  }
+  await saveStoredDownloadTasks(tasks)
+  return tasks[index]
+}
+
+const tryEmbedCoverToAudio = async({
+  filePath,
+  coverPath,
+  taskId,
+}: {
+  filePath: string
+  coverPath: string
+  taskId?: string
+}) => {
+  try {
+    await writePic(filePath, coverPath)
+    const partial = {
+      coverEmbedStatus: 'embedded' as const,
+      coverEmbedError: null,
+      coverEmbedUpdatedAt: Date.now(),
+    }
+    if (taskId) await updateTaskCoverEmbedStateById(taskId, partial)
+    else await updateTaskCoverEmbedStateByFilePath(filePath, partial)
+    return true
+  } catch (err: any) {
+    const partial = {
+      coverEmbedStatus: 'failed' as const,
+      coverEmbedError: err?.message ?? String(err),
+      coverEmbedUpdatedAt: Date.now(),
+    }
+    if (taskId) await updateTaskCoverEmbedStateById(taskId, partial)
+    else await updateTaskCoverEmbedStateByFilePath(filePath, partial)
+    throw err
+  }
+}
+
 const buildLocalMusicInfo = (filePath: string, metadata: {
   name: string
   singer: string
@@ -99,14 +166,18 @@ const buildLocalMusicInfo = (filePath: string, metadata: {
 export const importDownloadedMusicToDownloadList = async(filePath: string) => {
   const metadata = await readMetadata(filePath)
   if (!metadata) return null
+  const tasks = await getStoredDownloadTasks()
+  const task = tasks.find(item => item.metadata.filePath == filePath)
   let picUrl = await readPic(filePath).catch(() => '')
   if (!picUrl) {
     const coverPath = buildCoverPath(filePath)
     if (await existsFile(coverPath).catch(() => false)) {
       picUrl = `file://${coverPath}`
-      void writePic(filePath, coverPath).catch((err: any) => {
-        log.warn('embed download cover failed', filePath, err?.message ?? err)
-      })
+      if (shouldAutoEmbedCover(task)) {
+        void tryEmbedCoverToAudio({ filePath, coverPath }).catch((err: any) => {
+          log.warn('embed download cover failed', filePath, err?.message ?? err)
+        })
+      }
     }
   }
   if (picUrl.startsWith('/')) picUrl = `file://${picUrl}`
@@ -134,9 +205,15 @@ export const syncDownloadedList = async() => {
       const coverPath = buildCoverPath(task.metadata.filePath)
       if (await existsFile(coverPath).catch(() => false)) {
         picUrl = `file://${coverPath}`
-        void writePic(task.metadata.filePath, coverPath).catch((err: any) => {
-          log.warn('embed synced download cover failed', task.metadata.filePath, err?.message ?? err)
-        })
+        if (shouldAutoEmbedCover(task)) {
+          void tryEmbedCoverToAudio({
+            filePath: task.metadata.filePath,
+            coverPath,
+            taskId: task.id,
+          }).catch((err: any) => {
+            log.warn('embed synced download cover failed', task.metadata.filePath, err?.message ?? err)
+          })
+        }
       }
     }
     if (picUrl.startsWith('/')) picUrl = `file://${picUrl}`
@@ -203,6 +280,9 @@ export const createDownloadTask = async(musicInfo: LX.Music.MusicInfoOnline, qua
   if (existingTask) {
     existingTask.metadata.fileName = fileName
     existingTask.metadata.filePath = filePath
+    existingTask.metadata.coverEmbedStatus ??= 'idle'
+    existingTask.metadata.coverEmbedError ??= null
+    existingTask.metadata.coverEmbedUpdatedAt ??= 0
     existingTask.status = 'waiting'
     existingTask.statusText = 'Waiting to start'
     await saveDownloadTasks([...tasks])
@@ -225,6 +305,9 @@ export const createDownloadTask = async(musicInfo: LX.Music.MusicInfoOnline, qua
       ext,
       fileName,
       filePath,
+      coverEmbedStatus: 'idle',
+      coverEmbedError: null,
+      coverEmbedUpdatedAt: 0,
     },
   }
 
@@ -299,9 +382,15 @@ const saveTaskLyric = async(task: LX.Download.ListItem) => {
 const saveTaskCover = async(task: LX.Download.ListItem) => {
   const coverPath = buildCoverPath(task.metadata.filePath)
   if (await existsFile(coverPath).catch(() => false)) {
-    await writePic(task.metadata.filePath, coverPath).catch((err: any) => {
-      log.warn('embed existing download cover failed', task.metadata.filePath, err?.message ?? err)
-    })
+    if (shouldAutoEmbedCover(task)) {
+      await tryEmbedCoverToAudio({
+        filePath: task.metadata.filePath,
+        coverPath,
+        taskId: task.id,
+      }).catch((err: any) => {
+        log.warn('embed existing download cover failed', task.metadata.filePath, err?.message ?? err)
+      })
+    }
     return true
   }
   let picUrl = task.metadata.musicInfo.meta.picUrl || ''
@@ -318,9 +407,15 @@ const saveTaskCover = async(task: LX.Download.ListItem) => {
     readTimeout: 20000,
   })
   await result.promise
-  await writePic(task.metadata.filePath, coverPath).catch((err: any) => {
-    log.warn('embed downloaded cover failed', task.metadata.filePath, err?.message ?? err)
-  })
+  if (shouldAutoEmbedCover(task)) {
+    await tryEmbedCoverToAudio({
+      filePath: task.metadata.filePath,
+      coverPath,
+      taskId: task.id,
+    }).catch((err: any) => {
+      log.warn('embed downloaded cover failed', task.metadata.filePath, err?.message ?? err)
+    })
+  }
   return true
 }
 

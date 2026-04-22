@@ -103,6 +103,12 @@ type SheetBeatCell = {
   lyricText: string
 }
 
+type PitchSlotInfo = {
+  startMs: number
+  endMs: number
+  token: string
+}
+
 type SheetBlock = {
   id: string
   startMs: number
@@ -442,6 +448,17 @@ const getMeterBeatCount = (timeSignature?: MusicProfile['timeSignature']) => {
   }
 }
 
+const getJianpuSubdivisionCount = (timeSignature?: MusicProfile['timeSignature']) => {
+  switch (timeSignature) {
+    case '6/8':
+      return 1
+    case '3/4':
+    case '4/4':
+    default:
+      return 2
+  }
+}
+
 const formatInstrumentLabel = (startMs: number, profile: MusicProfile | null) => {
   const beatIntervalMs = Math.max(1, Math.round(profile?.beatIntervalMs || 600))
   const firstBeatOffsetMs = Math.max(0, Math.round(profile?.firstBeatOffsetMs || 0))
@@ -486,22 +503,65 @@ const findSegmentForRange = (segments: ChordSegment[], startMs: number, endMs: n
     .sort((left, right) => right.startMs - left.startMs)[0] ?? null
 }
 
-const buildBeatJianpuCell = (
-  startMs: number,
-  endMs: number,
+const buildPitchSlots = (
+  beatTimes: number[],
   pitchTrack: NonNullable<MusicProfile['pitchTrack']>,
   tonicName: string,
+  timeSignature?: MusicProfile['timeSignature'],
 ) => {
-  if (!pitchTrack.length) return '--'
+  if (!pitchTrack.length) return new Map<number, PitchSlotInfo[]>()
   const tonicSemi = NOTE_TO_SEMITONE[tonicName.replace(/^b([A-G])$/, (_, note: string) => `${note}b`)] ?? NOTE_TO_SEMITONE[tonicName]
-  if (tonicSemi == null) return '--'
-  const centerMs = (startMs + endMs) / 2
-  const nearest = pitchTrack.reduce((prev, frame) => {
-    if (!prev) return frame
-    return Math.abs(frame.timeMs - centerMs) < Math.abs(prev.timeMs - centerMs) ? frame : prev
-  }, null as NonNullable<MusicProfile['pitchTrack']>[number] | null)
-  if (!nearest) return '--'
-  return intervalToJianpu(Math.round(nearest.midi) - tonicSemi)
+  if (tonicSemi == null) return new Map<number, PitchSlotInfo[]>()
+
+  const subdivisionCount = getJianpuSubdivisionCount(timeSignature)
+  const slotMap = new Map<number, PitchSlotInfo[]>()
+  let frameIndex = 0
+  let previousToken = ''
+
+  for (let beatIndex = 0; beatIndex < beatTimes.length - 1; beatIndex += 1) {
+    const beatStartMs = beatTimes[beatIndex]
+    const beatEndMs = beatTimes[beatIndex + 1]
+    const beatDurationMs = Math.max(1, beatEndMs - beatStartMs)
+    const slots: PitchSlotInfo[] = []
+
+    for (let slotIndex = 0; slotIndex < subdivisionCount; slotIndex += 1) {
+      const startMs = beatStartMs + beatDurationMs * slotIndex / subdivisionCount
+      const endMs = beatStartMs + beatDurationMs * (slotIndex + 1) / subdivisionCount
+      const energyMap = new Map<number, number>()
+
+      while (frameIndex < pitchTrack.length && pitchTrack[frameIndex].timeMs < startMs) frameIndex += 1
+      let scanIndex = frameIndex
+      while (scanIndex < pitchTrack.length && pitchTrack[scanIndex].timeMs < endMs) {
+        const midi = Math.round(pitchTrack[scanIndex].midi)
+        const weight = 0.1
+        energyMap.set(midi, (energyMap.get(midi) || 0) + weight)
+        scanIndex += 1
+      }
+
+      let token = '0'
+      let bestMidi: number | null = null
+      let bestWeight = 0
+      energyMap.forEach((weight, midi) => {
+        if (weight > bestWeight) {
+          bestWeight = weight
+          bestMidi = midi
+        }
+      })
+      if (bestMidi != null) token = intervalToJianpu(bestMidi - tonicSemi)
+      if (token != '0' && token == previousToken) token = '-'
+      if (token != '-') previousToken = token == '0' ? '' : token
+
+      slots.push({
+        startMs,
+        endMs,
+        token,
+      })
+    }
+
+    slotMap.set(beatIndex, slots)
+  }
+
+  return slotMap
 }
 
 const simplifyBeatCells = (cells: SheetBeatCell[]) => {
@@ -566,7 +626,7 @@ const buildBeatLyricFragments = (text: string, beatCount: number) => {
 
 const buildJianpuMeasureText = (block: SheetBlock) => {
   const notes = block.beats.map(beat => beat.jianpuText || '-')
-  return `${block.label} | ${notes.join('  ')} |`
+  return `${block.label} | ${notes.join(' ')} |`
 }
 
 const buildJianpuLyricText = (block: SheetBlock) => {
@@ -645,6 +705,7 @@ const buildSheetBlocks = (profile: MusicProfile | null, cues: ParsedCueLine[], r
   const pitchTrack = profile.pitchTrack ?? []
   const meterBeatCount = getMeterBeatCount(profile.timeSignature)
   const lyricAnchors = buildSheetAnchors(profile, cues, rawLyric)
+  const pitchSlotMap = buildPitchSlots(beatTimes, pitchTrack, tonicName, profile.timeSignature)
   const blocks: SheetBlock[] = []
   for (let beatIndex = 0, barIndex = 1; beatIndex < beatTimes.length - 1; beatIndex += meterBeatCount, barIndex += 1) {
     const beats: SheetBeatCell[] = []
@@ -656,7 +717,7 @@ const buildSheetBlocks = (profile: MusicProfile | null, cues: ParsedCueLine[], r
       const segment = findSegmentForRange(profile.chordSegments!, startMs, endMs)
       const chordText = segment ? transposeSimpleChord(segment.label, -capoSemitone) : '--'
       const degreeText = segment ? degreeTextForChord(segment.label, tonicName) || '--' : '--'
-      const jianpuText = buildBeatJianpuCell(startMs, endMs, pitchTrack, tonicName)
+      const jianpuText = (pitchSlotMap.get(beatIndex + offset) ?? []).map(slot => slot.token).join('') || '--'
       beats.push({
         startMs,
         chordText,

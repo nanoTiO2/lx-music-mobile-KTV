@@ -27,7 +27,9 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class MixerModule extends ReactContextBaseJavaModule {
   private static final long POSITION_POLL_INTERVAL_MS = 16L;
@@ -799,7 +801,9 @@ public class MixerModule extends ReactContextBaseJavaModule {
       BeatAlignedChordResult beatAlignedChordResult = alignChordSegmentsToBeatGrid(
         analysis.chordSegments,
         beatAnalysis,
-        analysis.analyzedDurationMs
+        analysis.analyzedDurationMs,
+        bestKey,
+        bestMode
       );
       if (!beatAlignedChordResult.segments.isEmpty()) {
         analysis.chordSegments = beatAlignedChordResult.segments;
@@ -1253,7 +1257,9 @@ public class MixerModule extends ReactContextBaseJavaModule {
   private BeatAlignedChordResult alignChordSegmentsToBeatGrid(
     List<ChordSegment> segments,
     BeatAnalysis beatAnalysis,
-    long analyzedDurationMs
+    long analyzedDurationMs,
+    int keyRoot,
+    String mode
   ) {
     BeatAlignedChordResult result = new BeatAlignedChordResult();
     result.segments = new ArrayList<>(segments);
@@ -1268,9 +1274,29 @@ public class MixerModule extends ReactContextBaseJavaModule {
     List<String> chordSeries = synchronizeChordSeriesToBeats(segments, beatTimes);
     if (chordSeries.isEmpty()) return result;
 
-    int bestMeter = chooseBestMeter(chordSeries);
+    DownbeatScore triple = scoreDownbeatAlignment(chordSeries, 3);
+    DownbeatScore quadruple = scoreDownbeatAlignment(chordSeries, 4);
+    int bestMeter = triple.score > quadruple.score ? 3 : 4;
+    DownbeatScore meterScore = bestMeter == 3 ? triple : quadruple;
     result.timeSignature = bestMeter == 3 ? "3/4" : "4/4";
-    result.segments = buildBeatAlignedSegments(chordSeries, beatTimes);
+    List<Map<String, Double>> beatCandidateScores = buildBeatCandidateScores(
+      segments,
+      beatTimes,
+      bestMeter,
+      meterScore.bestShift,
+      keyRoot,
+      mode
+    );
+    List<String> refinedChordSeries = refineChordSeries(
+      chordSeries,
+      beatCandidateScores,
+      bestMeter,
+      meterScore.bestShift,
+      keyRoot,
+      mode
+    );
+    refinedChordSeries = suppressIsolatedBeatFlutters(refinedChordSeries, beatCandidateScores);
+    result.segments = buildBeatAlignedSegments(refinedChordSeries, beatTimes);
     return result;
   }
 
@@ -1336,6 +1362,229 @@ public class MixerModule extends ReactContextBaseJavaModule {
       if (!"N".equals(normalized)) lastLabel = normalized;
     }
     return chordSeries;
+  }
+
+  private List<Map<String, Double>> buildBeatCandidateScores(
+    List<ChordSegment> segments,
+    List<Long> beatTimes,
+    int timeSignature,
+    int beatShift,
+    int keyRoot,
+    String mode
+  ) {
+    List<Map<String, Double>> beatCandidateScores = new ArrayList<>();
+    for (int beatIndex = 0; beatIndex < beatTimes.size() - 1; beatIndex++) {
+      long beatStartMs = beatTimes.get(beatIndex);
+      long beatEndMs = beatTimes.get(beatIndex + 1);
+      long beatCenterMs = (beatStartMs + beatEndMs) / 2L;
+      long beatDurationMs = Math.max(1L, beatEndMs - beatStartMs);
+      int posInBar = ((beatIndex - beatShift) % timeSignature + timeSignature) % timeSignature;
+      boolean isDownbeat = posInBar == 0;
+      boolean isStrongBeat = isDownbeat || (timeSignature == 4 && posInBar == 2);
+      Map<String, Double> scoreMap = new HashMap<>();
+
+      for (ChordSegment segment : segments) {
+        long overlapStart = Math.max(beatStartMs, segment.startMs);
+        long overlapEnd = Math.min(beatEndMs, segment.endMs);
+        long overlapMs = Math.max(0L, overlapEnd - overlapStart);
+        long segmentCenterMs = (segment.startMs + segment.endMs) / 2L;
+        long centerDistanceMs = Math.abs(segmentCenterMs - beatCenterMs);
+        if (overlapMs <= 0L && centerDistanceMs > beatDurationMs * 2L) continue;
+
+        double proximityScore = overlapMs > 0L
+          ? (overlapMs / (double) beatDurationMs) * 1.18
+          : Math.max(0.0, 0.42 - ((double) centerDistanceMs / Math.max(1.0, beatDurationMs)) * 0.17);
+        if (proximityScore <= 0.0) continue;
+
+        double score = proximityScore
+          + Math.max(0.0, Math.min(1.0, segment.confidence)) * 0.55
+          + computeBeatPlacementBonus(segment.label, keyRoot, mode, isDownbeat, isStrongBeat);
+
+        Double existing = scoreMap.get(segment.label);
+        if (existing == null || score > existing) scoreMap.put(segment.label, score);
+      }
+
+      beatCandidateScores.add(scoreMap);
+    }
+    return beatCandidateScores;
+  }
+
+  private double computeBeatPlacementBonus(String label, int keyRoot, String mode, boolean isDownbeat, boolean isStrongBeat) {
+    ChordCandidate candidate = decodeChordLabel(label);
+    if (candidate == null) return 0;
+    double structuralScore = computeDiatonicBonus(candidate.root, candidate.suffix, keyRoot, mode);
+    int majorSystemRoot = "minor".equals(mode) ? (keyRoot + 3) % 12 : keyRoot;
+    int degree = (candidate.root - majorSystemRoot + 12) % 12;
+    double bonus = structuralScore * (isDownbeat ? 0.52 : isStrongBeat ? 0.28 : 0.14);
+    if (isDownbeat) {
+      if (degree == 0 || degree == 7) bonus += 0.08;
+      else if (degree == 9) bonus += 0.05;
+      else if (degree == 1 || degree == 3 || degree == 6 || degree == 8 || degree == 10) bonus -= 0.04;
+    } else if (isStrongBeat) {
+      if (degree == 5 || degree == 2) bonus += 0.04;
+    }
+    return bonus;
+  }
+
+  private ChordCandidate decodeChordLabel(String label) {
+    if (label == null || label.isEmpty()) return null;
+    String trimmed = label.trim();
+    int matchedRoot = -1;
+    String matchedNote = null;
+    for (String note : NOTE_LABELS) {
+      if (!trimmed.startsWith(note)) continue;
+      if (matchedNote == null || note.length() > matchedNote.length()) {
+        matchedNote = note;
+      }
+    }
+    if (matchedNote == null) return null;
+    for (int index = 0; index < NOTE_LABELS.length; index++) {
+      if (NOTE_LABELS[index].equals(matchedNote)) {
+        matchedRoot = index;
+        break;
+      }
+    }
+    if (matchedRoot < 0) return null;
+    ChordCandidate candidate = new ChordCandidate();
+    candidate.root = matchedRoot;
+    candidate.suffix = trimmed.substring(matchedNote.length());
+    candidate.label = trimmed;
+    return candidate;
+  }
+
+  private double computeTransitionBonusByLabel(String previousLabel, String currentLabel, int keyRoot, String mode) {
+    if (previousLabel == null || currentLabel == null) return 0;
+    if (previousLabel.equals(currentLabel)) return 0.04;
+    ChordCandidate previous = decodeChordLabel(previousLabel);
+    ChordCandidate current = decodeChordLabel(currentLabel);
+    if (previous == null || current == null) return previousLabel.equals(currentLabel) ? 0.04 : -0.03;
+    return computeTransitionBonus(previous, current, keyRoot, mode);
+  }
+
+  private double getBeatCandidateBaseScore(Map<String, Double> scoreMap, String label) {
+    if (scoreMap == null) return Double.NEGATIVE_INFINITY;
+    Double score = scoreMap.get(label);
+    return score == null ? Double.NEGATIVE_INFINITY : score;
+  }
+
+  private List<List<String>> buildBeatCandidateRows(List<String> chordSeries, List<Map<String, Double>> beatCandidateScores) {
+    List<List<String>> rows = new ArrayList<>();
+    int beatCount = Math.min(chordSeries.size(), beatCandidateScores.size());
+    for (int beatIndex = 0; beatIndex < beatCount; beatIndex++) {
+      List<String> labels = new ArrayList<>();
+      String rawLabel = chordSeries.get(beatIndex);
+      if (isValidChordLabel(rawLabel)) labels.add(rawLabel);
+
+      Map<String, Double> scoreMap = beatCandidateScores.get(beatIndex);
+      List<Map.Entry<String, Double>> entries = new ArrayList<>(scoreMap.entrySet());
+      entries.sort((left, right) -> Double.compare(right.getValue(), left.getValue()));
+      for (Map.Entry<String, Double> entry : entries) {
+        String label = entry.getKey();
+        if (!isValidChordLabel(label) || labels.contains(label)) continue;
+        labels.add(label);
+        if (labels.size() >= 5) break;
+      }
+
+      if (labels.isEmpty()) labels.add(isValidChordLabel(rawLabel) ? rawLabel : "N");
+      rows.add(labels);
+    }
+    return rows;
+  }
+
+  private List<String> refineChordSeries(
+    List<String> chordSeries,
+    List<Map<String, Double>> beatCandidateScores,
+    int timeSignature,
+    int beatShift,
+    int keyRoot,
+    String mode
+  ) {
+    if (chordSeries.isEmpty() || beatCandidateScores.isEmpty()) return chordSeries;
+    List<List<String>> candidateRows = buildBeatCandidateRows(chordSeries, beatCandidateScores);
+    int beatCount = candidateRows.size();
+    double[][] dp = new double[beatCount][];
+    int[][] prevIndex = new int[beatCount][];
+
+    for (int beatIndex = 0; beatIndex < beatCount; beatIndex++) {
+      List<String> row = candidateRows.get(beatIndex);
+      dp[beatIndex] = new double[row.size()];
+      prevIndex[beatIndex] = new int[row.size()];
+      Arrays.fill(dp[beatIndex], Double.NEGATIVE_INFINITY);
+      Arrays.fill(prevIndex[beatIndex], -1);
+    }
+
+    for (int candidateIndex = 0; candidateIndex < candidateRows.get(0).size(); candidateIndex++) {
+      String label = candidateRows.get(0).get(candidateIndex);
+      double baseScore = getBeatCandidateBaseScore(beatCandidateScores.get(0), label);
+      if (!Double.isFinite(baseScore)) baseScore = label.equals(chordSeries.get(0)) ? 0.22 : Double.NEGATIVE_INFINITY;
+      if (!Double.isFinite(baseScore)) continue;
+      dp[0][candidateIndex] = baseScore + (label.equals(chordSeries.get(0)) ? 0.08 : 0.0);
+    }
+
+    for (int beatIndex = 1; beatIndex < beatCount; beatIndex++) {
+      int posInBar = ((beatIndex - beatShift) % timeSignature + timeSignature) % timeSignature;
+      boolean isDownbeat = posInBar == 0;
+      boolean isStrongBeat = isDownbeat || (timeSignature == 4 && posInBar == 2);
+      List<String> currentRow = candidateRows.get(beatIndex);
+      for (int currentIndex = 0; currentIndex < currentRow.size(); currentIndex++) {
+        String currentLabel = currentRow.get(currentIndex);
+        double baseScore = getBeatCandidateBaseScore(beatCandidateScores.get(beatIndex), currentLabel);
+        if (!Double.isFinite(baseScore)) baseScore = currentLabel.equals(chordSeries.get(beatIndex)) ? 0.18 : Double.NEGATIVE_INFINITY;
+        if (!Double.isFinite(baseScore)) continue;
+        if (currentLabel.equals(chordSeries.get(beatIndex))) baseScore += 0.06;
+        if (isDownbeat) baseScore += 0.03;
+        else if (isStrongBeat) baseScore += 0.01;
+
+        double bestScore = Double.NEGATIVE_INFINITY;
+        int bestPrevIndex = -1;
+        List<String> previousRow = candidateRows.get(beatIndex - 1);
+        for (int previousIndex = 0; previousIndex < previousRow.size(); previousIndex++) {
+          if (!Double.isFinite(dp[beatIndex - 1][previousIndex])) continue;
+          String previousLabel = previousRow.get(previousIndex);
+          double transitionScore = computeTransitionBonusByLabel(previousLabel, currentLabel, keyRoot, mode);
+          double pathScore = dp[beatIndex - 1][previousIndex] + baseScore + transitionScore;
+          if (pathScore > bestScore) {
+            bestScore = pathScore;
+            bestPrevIndex = previousIndex;
+          }
+        }
+        dp[beatIndex][currentIndex] = bestScore;
+        prevIndex[beatIndex][currentIndex] = bestPrevIndex;
+      }
+    }
+
+    int bestLastIndex = 0;
+    for (int candidateIndex = 1; candidateIndex < dp[beatCount - 1].length; candidateIndex++) {
+      if (dp[beatCount - 1][candidateIndex] > dp[beatCount - 1][bestLastIndex]) bestLastIndex = candidateIndex;
+    }
+
+    List<String> refined = new ArrayList<>(chordSeries);
+    for (int beatIndex = beatCount - 1; beatIndex >= 0; beatIndex--) {
+      List<String> row = candidateRows.get(beatIndex);
+      if (bestLastIndex < 0 || bestLastIndex >= row.size()) break;
+      refined.set(beatIndex, row.get(bestLastIndex));
+      bestLastIndex = prevIndex[beatIndex][bestLastIndex];
+      if (beatIndex > 0 && bestLastIndex < 0) break;
+    }
+    return refined;
+  }
+
+  private List<String> suppressIsolatedBeatFlutters(List<String> chordSeries, List<Map<String, Double>> beatCandidateScores) {
+    if (chordSeries.size() < 3) return chordSeries;
+    List<String> normalized = new ArrayList<>(chordSeries);
+    for (int i = 1; i < normalized.size() - 1; i++) {
+      String previous = normalized.get(i - 1);
+      String current = normalized.get(i);
+      String next = normalized.get(i + 1);
+      if (!previous.equals(next) || current.equals(previous)) continue;
+      double currentScore = getBeatCandidateBaseScore(beatCandidateScores.get(i), current);
+      double neighborScore = getBeatCandidateBaseScore(beatCandidateScores.get(i), previous);
+      if (!Double.isFinite(neighborScore)) continue;
+      if (!Double.isFinite(currentScore) || neighborScore + 0.12 >= currentScore) {
+        normalized.set(i, previous);
+      }
+    }
+    return normalized;
   }
 
   private int chooseBestMeter(List<String> chordSeries) {
