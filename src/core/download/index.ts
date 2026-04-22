@@ -1,4 +1,5 @@
 import { getLyricInfo as getOnlineLyricInfo, getMusicUrl as getOnlineMusicUrl } from '@/core/music/online'
+import { getPicUrl as getOnlinePicUrl } from '@/core/music/online'
 import { updateSetting } from '@/core/common'
 import { addListMusics, overwriteListMusics, updateListMusics } from '@/core/list'
 import { LIST_IDS } from '@/config/constant'
@@ -6,7 +7,7 @@ import settingState from '@/store/setting/state'
 import { formatPlayTime2 } from '@/utils'
 import { getDownloadTasks as getStoredDownloadTasks, saveDownloadTasks as saveStoredDownloadTasks } from '@/utils/data'
 import { downloadFile, existsFile, externalStorageDirectoryPath, mkdir, stopDownload, writeFile } from '@/utils/fs'
-import { readMetadata } from '@/utils/localMediaMetadata'
+import { readMetadata, readPic, writePic } from '@/utils/localMediaMetadata'
 import { log } from '@/utils/log'
 import { getListMusicSync } from '@/utils/listManage'
 import { buildLyrics } from '@/utils/lrcTools'
@@ -66,13 +67,18 @@ const buildLyricPath = (filePath: string) => {
   return dotIndex > -1 ? `${filePath.substring(0, dotIndex)}.lrc` : `${filePath}.lrc`
 }
 
+const buildCoverPath = (filePath: string) => {
+  const dotIndex = filePath.lastIndexOf('.')
+  return dotIndex > -1 ? `${filePath.substring(0, dotIndex)}.cover.jpg` : `${filePath}.cover.jpg`
+}
+
 const buildLocalMusicInfo = (filePath: string, metadata: {
   name: string
   singer: string
   albumName: string
   interval: number
   ext: string
-}): LX.Music.MusicInfoLocal => {
+}, picUrl: string = ''): LX.Music.MusicInfoLocal => {
   return {
     id: filePath,
     name: metadata.name,
@@ -82,8 +88,9 @@ const buildLocalMusicInfo = (filePath: string, metadata: {
     meta: {
       albumName: metadata.albumName,
       filePath,
+      originFilePath: filePath,
       songId: filePath,
-      picUrl: '',
+      picUrl,
       ext: metadata.ext,
     },
   }
@@ -92,7 +99,18 @@ const buildLocalMusicInfo = (filePath: string, metadata: {
 export const importDownloadedMusicToDownloadList = async(filePath: string) => {
   const metadata = await readMetadata(filePath)
   if (!metadata) return null
-  const musicInfo = buildLocalMusicInfo(filePath, metadata)
+  let picUrl = await readPic(filePath).catch(() => '')
+  if (!picUrl) {
+    const coverPath = buildCoverPath(filePath)
+    if (await existsFile(coverPath).catch(() => false)) {
+      picUrl = `file://${coverPath}`
+      void writePic(filePath, coverPath).catch((err: any) => {
+        log.warn('embed download cover failed', filePath, err?.message ?? err)
+      })
+    }
+  }
+  if (picUrl.startsWith('/')) picUrl = `file://${picUrl}`
+  const musicInfo = buildLocalMusicInfo(filePath, metadata, picUrl)
   const targetListId = LIST_IDS.DOWNLOAD
   const list = getListMusicSync(targetListId)
   if (list.some(item => item.id == musicInfo.id)) {
@@ -111,7 +129,18 @@ export const syncDownloadedList = async() => {
     if (!await existsFile(task.metadata.filePath)) continue
     const metadata = await readMetadata(task.metadata.filePath)
     if (!metadata) continue
-    localMusicList.push(buildLocalMusicInfo(task.metadata.filePath, metadata))
+    let picUrl = await readPic(task.metadata.filePath).catch(() => '')
+    if (!picUrl) {
+      const coverPath = buildCoverPath(task.metadata.filePath)
+      if (await existsFile(coverPath).catch(() => false)) {
+        picUrl = `file://${coverPath}`
+        void writePic(task.metadata.filePath, coverPath).catch((err: any) => {
+          log.warn('embed synced download cover failed', task.metadata.filePath, err?.message ?? err)
+        })
+      }
+    }
+    if (picUrl.startsWith('/')) picUrl = `file://${picUrl}`
+    localMusicList.push(buildLocalMusicInfo(task.metadata.filePath, metadata, picUrl))
   }
   await overwriteListMusics(LIST_IDS.DOWNLOAD, localMusicList)
   return localMusicList
@@ -267,6 +296,34 @@ const saveTaskLyric = async(task: LX.Download.ListItem) => {
   return true
 }
 
+const saveTaskCover = async(task: LX.Download.ListItem) => {
+  const coverPath = buildCoverPath(task.metadata.filePath)
+  if (await existsFile(coverPath).catch(() => false)) {
+    await writePic(task.metadata.filePath, coverPath).catch((err: any) => {
+      log.warn('embed existing download cover failed', task.metadata.filePath, err?.message ?? err)
+    })
+    return true
+  }
+  let picUrl = task.metadata.musicInfo.meta.picUrl || ''
+  if (!picUrl) {
+    picUrl = await getOnlinePicUrl({
+      musicInfo: task.metadata.musicInfo,
+      isRefresh: false,
+      onToggleSource: () => {},
+    }).catch(() => '')
+  }
+  if (!picUrl) return false
+  const result = downloadFile(picUrl, coverPath, {
+    connectionTimeout: 15000,
+    readTimeout: 20000,
+  })
+  await result.promise
+  await writePic(task.metadata.filePath, coverPath).catch((err: any) => {
+    log.warn('embed downloaded cover failed', task.metadata.filePath, err?.message ?? err)
+  })
+  return true
+}
+
 export const startDownloadTask = async(taskId: string) => {
   const tasks = await getStoredDownloadTasks()
   const task = tasks.find(item => item.id == taskId)
@@ -354,6 +411,9 @@ export const startDownloadTask = async(taskId: string) => {
       },
     }
     const isLyricSaved = await saveTaskLyric(nextTask)
+    await saveTaskCover(nextTask).catch((err: any) => {
+      log.warn('save download cover failed', nextTask.id, err?.message ?? err)
+    })
     const completedTask = await updateDownloadTask(task.id, {
       isComplate: true,
       status: 'completed',

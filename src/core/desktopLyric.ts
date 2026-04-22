@@ -11,6 +11,7 @@ import {
   toggleLock,
   setColor,
   setAlpha,
+  setBackgroundAlpha,
   setTextSize,
   setShowToggleAnima,
   setSingleLine,
@@ -40,6 +41,7 @@ export const showDesktopLyric = async() => {
     playedColor: setting['desktopLyric.style.lyricPlayedColor'],
     shadowColor: setting['desktopLyric.style.lyricShadowColor'],
     opacity: setting['desktopLyric.style.opacity'],
+    backgroundOpacity: setting['desktopLyric.style.backgroundOpacity'],
     textSize: setting['desktopLyric.style.fontSize'],
     width: setting['desktopLyric.width'],
     maxLineNum: setting['desktopLyric.maxLineNum'],
@@ -81,6 +83,7 @@ export const setDesktopLyricColor = async(unplayColor: string | null, playedColo
   )
 }
 export const setDesktopLyricAlpha = setAlpha
+export const setDesktopLyricBackgroundAlpha = setBackgroundAlpha
 export const setDesktopLyricTextSize = setTextSize
 export const setShowDesktopLyricToggleAnima = setShowToggleAnima
 export const setDesktopLyricSingleLine = setSingleLine

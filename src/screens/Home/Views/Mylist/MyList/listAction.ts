@@ -4,7 +4,7 @@ import syncSourceList from '@/core/syncSourceList'
 import { log } from '@/utils/log'
 import { filterFileName, filterMusicList, formatPlayTime2, toNewMusicInfo } from '@/utils'
 import { handleImportListPart } from '@/screens/Home/Views/Setting/settings/Backup/actions'
-import { readMetadata, scanAudioFiles, type MusicMetadataFull } from '@/utils/localMediaMetadata'
+import { readMetadata, readPic, scanAudioFiles, type MusicMetadataFull } from '@/utils/localMediaMetadata'
 import settingState from '@/store/setting/state'
 import BackgroundTimer from 'react-native-background-timer'
 import { type FileType } from '@/utils/fs'
@@ -103,13 +103,14 @@ export const buildLocalMusicInfoByFilePath = (file: FileType): LX.Music.MusicInf
     meta: {
       albumName: '',
       filePath: file.path,
+      originFilePath: file.path,
       songId: file.path,
       picUrl: '',
       ext: file.name.substring(index + 1),
     },
   }
 }
-export const buildLocalMusicInfo = (filePath: string, metadata: MusicMetadataFull): LX.Music.MusicInfoLocal => {
+export const buildLocalMusicInfo = (filePath: string, metadata: MusicMetadataFull, picUrl: string = ''): LX.Music.MusicInfoLocal => {
   return {
     id: filePath,
     name: metadata.name,
@@ -119,8 +120,9 @@ export const buildLocalMusicInfo = (filePath: string, metadata: MusicMetadataFul
     meta: {
       albumName: metadata.albumName,
       filePath,
+      originFilePath: filePath,
       songId: filePath,
-      picUrl: '',
+      picUrl,
       ext: metadata.ext,
     },
   }
@@ -151,13 +153,19 @@ const createLocalMusicInfos = async(filePaths: string[], errorPath: string[], ca
       filePaths.shift(),
     ].filter(Boolean) as string[]
 
-    await Promise.all(tasks.map(async path => readMetadata(path).then(info => ([path, info] as const)))).then((res) => {
-      for (const [path, info] of res) {
+    await Promise.all(tasks.map(async path => {
+      const info = await readMetadata(path)
+      if (!info) return [path, null, ''] as const
+      let picUrl = await readPic(path).catch(() => '')
+      if (picUrl.startsWith('/')) picUrl = `file://${picUrl}`
+      return [path, info, picUrl] as const
+    })).then((res) => {
+      for (const [path, info, picUrl] of res) {
         if (!info) {
           errorPath.push(path)
           continue
         }
-        list.push(buildLocalMusicInfo(path, info))
+        list.push(buildLocalMusicInfo(path, info, picUrl))
       }
     })
   }

@@ -16,6 +16,14 @@ import { getLocalFilePath, getLocalMetaFilePath } from '@/utils/music'
 import { readLyric, readPic } from '@/utils/localMediaMetadata'
 import { stat } from '@/utils/fs'
 
+const normalizeLocalUri = (uri: string) => {
+  try {
+    return encodeURI(uri)
+  } catch {
+    return uri
+  }
+}
+
 const getOtherSourceByLocal = async<T>(musicInfo: LX.Music.MusicInfoLocal, handler: (infos: LX.Music.MusicInfoOnline[]) => Promise<T>) => {
   let result: LX.Music.MusicInfoOnline[] = []
   result = await getOtherSource(musicInfo)
@@ -117,6 +125,11 @@ export const getPicUrl = async({ musicInfo, listId, isRefresh, skipFilePic, allo
     let pic = metadataFilePath ? await readPic(metadataFilePath).catch(() => null) : null
     if (pic) {
       if (pic.startsWith('/')) pic = `file://${pic}`
+      pic = normalizeLocalUri(pic)
+      if (listId && musicInfo.meta.picUrl != pic) {
+        musicInfo.meta.picUrl = pic
+        void updateListMusics([{ id: listId, musicInfo }])
+      }
       return pic
     }
 
@@ -135,7 +148,7 @@ export const getPicUrl = async({ musicInfo, listId, isRefresh, skipFilePic, allo
   return getOtherSourceByLocal(musicInfo, async(otherSource) => {
     return getOnlineOtherSourcePicUrl({ musicInfos: [...otherSource], onToggleSource, isRefresh }).then(({ url, musicInfo: targetMusicInfo, isFromCache }) => {
       if (listId) {
-        musicInfo.meta.picUrl = url
+        musicInfo.meta.picUrl = /^https?:\/\//.test(url) ? url : normalizeLocalUri(url)
         void updateListMusics([{ id: listId, musicInfo }])
       }
 

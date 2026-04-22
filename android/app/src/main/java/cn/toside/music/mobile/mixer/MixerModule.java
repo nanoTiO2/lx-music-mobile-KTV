@@ -35,13 +35,18 @@ public class MixerModule extends ReactContextBaseJavaModule {
   private static final int ANALYZE_FRAME_SAMPLES = 1024;
   private static final int PITCH_FRAME_SAMPLES = 2048;
   private static final int MAX_WAVEFORM_SAMPLES = 144;
-  private static final long CHORD_SEGMENT_MS = 700L;
-  private static final long MIN_CHORD_EVENT_MS = 520L;
-  private static final long MAX_BRIDGE_SEGMENT_MS = 900L;
+  private static final long CHORD_SEGMENT_MS = 560L;
+  private static final long MIN_CHORD_EVENT_MS = 360L;
+  private static final long MAX_BRIDGE_SEGMENT_MS = 620L;
   private static final int MIN_BPM = 70;
   private static final int MAX_BPM = 180;
   private static final double MIN_PITCH_FREQ = 80.0;
   private static final double MAX_PITCH_FREQ = 1000.0;
+  private static final double SPECTRAL_MIN_FREQ = 55.0;
+  private static final double SPECTRAL_MAX_FREQ = 1760.0;
+  private static final int SPECTRAL_HARMONICS = 4;
+  private static final double SPECTRAL_CHROMA_WEIGHT = 0.92;
+  private static final double MELODY_PITCH_CLASS_WEIGHT = 0.38;
   private static final String[] NOTE_LABELS = {
     "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"
   };
@@ -614,6 +619,8 @@ public class MixerModule extends ReactContextBaseJavaModule {
     }
     if (energy <= 1e-6) return;
 
+    accumulateSpectralPitchClassEnergy(centered, sampleRate, pitchClassEnergy, currentSegmentPitchClass);
+
     int minLag = Math.max(1, (int) Math.floor(sampleRate / MAX_PITCH_FREQ));
     int maxLag = Math.min(samples.length - 2, (int) Math.ceil(sampleRate / MIN_PITCH_FREQ));
     double bestScore = 0;
@@ -635,8 +642,8 @@ public class MixerModule extends ReactContextBaseJavaModule {
     double midi = 69.0 + 12.0 * (Math.log(freq / 440.0) / Math.log(2.0));
     int pitchClass = ((int) Math.round(midi) % 12 + 12) % 12;
     double weightedEnergy = Math.sqrt(energy / centered.length);
-    pitchClassEnergy[pitchClass] += weightedEnergy;
-    currentSegmentPitchClass[pitchClass] += weightedEnergy;
+    pitchClassEnergy[pitchClass] += weightedEnergy * MELODY_PITCH_CLASS_WEIGHT;
+    currentSegmentPitchClass[pitchClass] += weightedEnergy * MELODY_PITCH_CLASS_WEIGHT;
     int midiIndex = Math.max(0, Math.min(pitchNoteEnergy.length - 1, (int) Math.round(midi)));
     pitchNoteEnergy[midiIndex] += weightedEnergy;
     PitchFrameData pitchFrame = new PitchFrameData();
@@ -645,6 +652,90 @@ public class MixerModule extends ReactContextBaseJavaModule {
     pitchFrame.frequencyHz = freq;
     pitchFrame.weight = weightedEnergy;
     pitchFrames.add(pitchFrame);
+  }
+
+  private void accumulateSpectralPitchClassEnergy(double[] centered, int sampleRate, double[] pitchClassEnergy, double[] currentSegmentPitchClass) {
+    int size = centered.length;
+    if (size <= 0 || (size & (size - 1)) != 0) return;
+
+    double[] real = new double[size];
+    double[] imag = new double[size];
+    for (int i = 0; i < size; i++) {
+      double window = 0.5 - 0.5 * Math.cos((2.0 * Math.PI * i) / Math.max(1, size - 1));
+      real[i] = centered[i] * window;
+    }
+    fft(real, imag);
+
+    double[] chroma = new double[12];
+    for (int bin = 1; bin < size / 2; bin++) {
+      double freq = bin * sampleRate / (double) size;
+      if (freq < SPECTRAL_MIN_FREQ || freq > SPECTRAL_MAX_FREQ) continue;
+      double magnitude = Math.hypot(real[bin], imag[bin]);
+      if (magnitude <= 1e-6) continue;
+      double energy = Math.log1p(magnitude);
+      for (int harmonic = 1; harmonic <= SPECTRAL_HARMONICS; harmonic++) {
+        double harmonicFreq = freq * harmonic;
+        if (harmonicFreq > SPECTRAL_MAX_FREQ) break;
+        double midi = 69.0 + 12.0 * (Math.log(harmonicFreq / 440.0) / Math.log(2.0));
+        int pitchClass = ((int) Math.round(midi) % 12 + 12) % 12;
+        chroma[pitchClass] += energy / Math.pow(harmonic, 1.12);
+      }
+    }
+
+    double total = 0;
+    double maxValue = 0;
+    for (double value : chroma) {
+      total += value;
+      maxValue = Math.max(maxValue, value);
+    }
+    if (total <= 1e-6 || maxValue <= 1e-6) return;
+
+    double mean = total / chroma.length;
+    for (int pitchClass = 0; pitchClass < chroma.length; pitchClass++) {
+      double normalized = Math.max(0, chroma[pitchClass] - mean * 0.35) / maxValue;
+      if (normalized <= 1e-5) continue;
+      double weighted = normalized * SPECTRAL_CHROMA_WEIGHT;
+      pitchClassEnergy[pitchClass] += weighted;
+      currentSegmentPitchClass[pitchClass] += weighted;
+    }
+  }
+
+  private void fft(double[] real, double[] imag) {
+    int n = real.length;
+    if (n <= 1) return;
+
+    int levels = 31 - Integer.numberOfLeadingZeros(n);
+    for (int i = 0; i < n; i++) {
+      int j = Integer.reverse(i) >>> (32 - levels);
+      if (j > i) {
+        double tempReal = real[i];
+        real[i] = real[j];
+        real[j] = tempReal;
+        double tempImag = imag[i];
+        imag[i] = imag[j];
+        imag[j] = tempImag;
+      }
+    }
+
+    for (int size = 2; size <= n; size <<= 1) {
+      int halfSize = size >>> 1;
+      double phaseStep = -2.0 * Math.PI / size;
+      for (int start = 0; start < n; start += size) {
+        for (int offset = 0; offset < halfSize; offset++) {
+          double angle = phaseStep * offset;
+          double cos = Math.cos(angle);
+          double sin = Math.sin(angle);
+          int evenIndex = start + offset;
+          int oddIndex = evenIndex + halfSize;
+          double oddReal = real[oddIndex] * cos - imag[oddIndex] * sin;
+          double oddImag = real[oddIndex] * sin + imag[oddIndex] * cos;
+          real[oddIndex] = real[evenIndex] - oddReal;
+          imag[oddIndex] = imag[evenIndex] - oddImag;
+          real[evenIndex] += oddReal;
+          imag[evenIndex] += oddImag;
+        }
+      }
+    }
   }
 
   private AudioProfileAnalysis buildAudioProfileAnalysis(List<Double> energies, int sampleRate, double[] pitchClassEnergy, double[] pitchNoteEnergy, List<SegmentPitchClassData> segmentPitchClasses, List<PitchFrameData> pitchFrames) {
@@ -990,7 +1081,7 @@ public class MixerModule extends ReactContextBaseJavaModule {
         }
       }
       candidates.sort((a, b) -> Double.compare(b.baseScore, a.baseScore));
-      int limit = Math.min(8, candidates.size());
+      int limit = Math.min(12, candidates.size());
       List<ChordCandidate> topCandidates = new ArrayList<>();
       for (int i = 0; i < limit; i++) {
         ChordCandidate candidate = candidates.get(i);
@@ -1063,12 +1154,30 @@ public class MixerModule extends ReactContextBaseJavaModule {
       else outOfChordEnergy += energy;
     }
     double score = inChordEnergy * 1.35 - outOfChordEnergy * 0.82;
+    double thirdSupport = getThirdSupport(normalized, root, suffix);
+    double fifthSupport = getFifthSupport(normalized, root, suffix);
+    double seventhSupport = getSeventhSupport(normalized, root, suffix);
     score += normalized[root] * 0.72;
-    score += getThirdSupport(normalized, root, suffix) * 0.54;
-    score += getFifthSupport(normalized, root, suffix) * 0.32;
-    score += getSeventhSupport(normalized, root, suffix) * 0.14;
+    score += thirdSupport * 0.54;
+    score += fifthSupport * 0.32;
+    score += seventhSupport * 0.14;
+    score += computeChordQualityPenalty(suffix, thirdSupport, fifthSupport, seventhSupport);
     score += computeDiatonicBonus(root, suffix, keyRoot, mode);
     return score;
+  }
+
+  private double computeChordQualityPenalty(String suffix, double thirdSupport, double fifthSupport, double seventhSupport) {
+    if ("7".equals(suffix) || "maj7".equals(suffix) || "m7".equals(suffix)) {
+      if (seventhSupport < 0.12) return -0.22;
+      if (seventhSupport < 0.18) return -0.08;
+      return 0.03;
+    }
+    if ("dim".equals(suffix)) {
+      if (thirdSupport < 0.14 || fifthSupport < 0.1) return -0.26;
+      return -0.04;
+    }
+    if (thirdSupport < 0.09 || fifthSupport < 0.08) return -0.06;
+    return 0;
   }
 
   private double getThirdSupport(double[] segmentPitchClassEnergy, int root, String suffix) {
@@ -1110,7 +1219,7 @@ public class MixerModule extends ReactContextBaseJavaModule {
 
   private double computeTransitionBonus(ChordCandidate previous, ChordCandidate current, int keyRoot, String mode) {
     if (previous == null || current == null) return 0;
-    if (previous.label.equals(current.label)) return 0.42;
+    if (previous.label.equals(current.label)) return 0.02;
 
     int majorSystemRoot = "minor".equals(mode) ? (keyRoot + 3) % 12 : keyRoot;
     int prevDegree = (previous.root - majorSystemRoot + 12) % 12;
@@ -1184,29 +1293,40 @@ public class MixerModule extends ReactContextBaseJavaModule {
     List<String> chordSeries = new ArrayList<>();
     if (segments.isEmpty() || beatTimes.isEmpty()) return chordSeries;
 
-    int beatIndex = 0;
-    String[] beatLabels = new String[beatTimes.size()];
+    String[] beatLabels = new String[Math.max(0, beatTimes.size() - 1)];
     for (int i = 0; i < beatLabels.length; i++) beatLabels[i] = "N";
 
-    for (ChordSegment segment : segments) {
-      long segmentStartMs = segment.startMs;
-      long beatDuration = beatIndex < beatTimes.size() - 1
-        ? beatTimes.get(beatIndex + 1) - beatTimes.get(beatIndex)
-        : beatIndex > 0
-          ? beatTimes.get(beatIndex) - beatTimes.get(beatIndex - 1)
-          : 0L;
-      while (
-        beatIndex < beatTimes.size() - 1 &&
-        beatTimes.get(beatIndex + 1) - Math.round(beatDuration * 0.35) <= segmentStartMs
-      ) {
-        beatIndex += 1;
-        beatDuration = beatIndex < beatTimes.size() - 1
-          ? beatTimes.get(beatIndex + 1) - beatTimes.get(beatIndex)
-          : beatIndex > 0
-            ? beatTimes.get(beatIndex) - beatTimes.get(beatIndex - 1)
-            : beatDuration;
+    for (int beatIndex = 0; beatIndex < beatLabels.length; beatIndex++) {
+      long beatStartMs = beatTimes.get(beatIndex);
+      long beatEndMs = beatTimes.get(beatIndex + 1);
+      long beatCenterMs = (beatStartMs + beatEndMs) / 2L;
+      ChordSegment bestSegment = null;
+      long bestOverlapMs = 0L;
+      long bestCenterDistanceMs = Long.MAX_VALUE;
+      for (ChordSegment segment : segments) {
+        long overlapStart = Math.max(beatStartMs, segment.startMs);
+        long overlapEnd = Math.min(beatEndMs, segment.endMs);
+        long overlapMs = overlapEnd - overlapStart;
+        long segmentCenterMs = (segment.startMs + segment.endMs) / 2L;
+        long centerDistanceMs = Math.abs(segmentCenterMs - beatCenterMs);
+        if (overlapMs > bestOverlapMs || (overlapMs == bestOverlapMs && centerDistanceMs < bestCenterDistanceMs)) {
+          bestOverlapMs = overlapMs;
+          bestSegment = segment;
+          bestCenterDistanceMs = centerDistanceMs;
+        }
       }
-      beatLabels[Math.min(beatIndex, beatLabels.length - 1)] = segment.label;
+      if (bestSegment == null || bestOverlapMs <= 0L) {
+        bestCenterDistanceMs = Long.MAX_VALUE;
+        for (ChordSegment segment : segments) {
+          long segmentCenterMs = (segment.startMs + segment.endMs) / 2L;
+          long centerDistanceMs = Math.abs(segmentCenterMs - beatCenterMs);
+          if (centerDistanceMs < bestCenterDistanceMs) {
+            bestCenterDistanceMs = centerDistanceMs;
+            bestSegment = segment;
+          }
+        }
+      }
+      if (bestSegment != null) beatLabels[beatIndex] = bestSegment.label;
     }
 
     String lastLabel = "N";

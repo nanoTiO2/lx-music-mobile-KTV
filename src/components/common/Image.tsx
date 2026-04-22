@@ -21,6 +21,14 @@ export const defaultHeaders = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36',
 }
 
+const normalizeLocalUri = (uri: string) => {
+  try {
+    return encodeURI(uri)
+  } catch {
+    return uri
+  }
+}
+
 const EmptyPic = memo(({ style, nativeID }: { style: ImageProps['style'], nativeID: ImageProps['nativeID'] }) => {
   const theme = useTheme()
   const { onLayout, width } = useLayout()
@@ -48,19 +56,21 @@ const Image = memo(({ url, cache, resizeMode = 'cover', style, onError, nativeID
     : url?.startsWith('/')
       ? 'file://' + url
       : url
+  const isLocalUri = !!uri && /^(file|content):\/\//.test(uri)
+  if (isLocalUri && typeof uri == 'string') uri = normalizeLocalUri(uri)
   const showDefault = useMemo(() => !uri || isError, [isError, uri])
   return (
     showDefault ? <EmptyPic style={style} nativeID={nativeID} />
       : (
           <FastImage
             style={style}
-            source={{
-              uri: uri!,
-              headers: defaultHeaders,
-              cache: cache === false ? 'reload' : 'force-cache',
-              // priority: FastImage.priority.normal,
-              // cache: cache === false ? 'web' : 'immutable',
-            }}
+            source={isLocalUri
+              ? { uri: uri! }
+              : {
+                  uri: uri!,
+                  headers: defaultHeaders,
+                  cache: cache === false ? 'reload' : 'force-cache',
+                }}
             onError={handleError}
             resizeMode={resizeMode}
             nativeID={nativeID}

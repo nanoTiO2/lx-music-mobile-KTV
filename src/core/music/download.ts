@@ -1,4 +1,5 @@
 import { existsFile } from '@/utils/fs'
+import { readPic } from '@/utils/localMediaMetadata'
 import {
   getMusicUrl as getOnlineMusicUrl,
   getPicUrl as getOnlinePicUrl,
@@ -11,6 +12,19 @@ const getLocalDownloadedPath = async(musicInfo: LX.Download.ListItem) => {
   const filePath = musicInfo.metadata.filePath
   if (!filePath) return null
   return await existsFile(filePath).then(exists => exists ? filePath : null).catch(() => null)
+}
+
+const getDownloadedCoverPath = (filePath: string) => {
+  const dotIndex = filePath.lastIndexOf('.')
+  return dotIndex > -1 ? `${filePath.substring(0, dotIndex)}.cover.jpg` : `${filePath}.cover.jpg`
+}
+
+const normalizeLocalUri = (uri: string) => {
+  try {
+    return encodeURI(uri)
+  } catch {
+    return uri
+  }
 }
 
 export const getMusicUrl = async({ musicInfo, isRefresh, allowToggleSource = true, onToggleSource = () => {} }: {
@@ -34,6 +48,22 @@ export const getPicUrl = async({ musicInfo, isRefresh, listId, onToggleSource = 
   onToggleSource?: (musicInfo?: LX.Music.MusicInfoOnline) => void
 }): Promise<string> => {
   if (!isRefresh) {
+    const localPath = await getLocalDownloadedPath(musicInfo)
+    if (localPath) {
+      const localCoverPath = getDownloadedCoverPath(localPath)
+      if (await existsFile(localCoverPath).catch(() => false)) {
+        const pic = normalizeLocalUri(`file://${localCoverPath}`)
+        musicInfo.metadata.musicInfo.meta.picUrl = pic
+        return pic
+      }
+      let pic = await readPic(localPath).catch(() => '')
+      if (pic) {
+        if (pic.startsWith('/')) pic = `file://${pic}`
+        pic = normalizeLocalUri(pic)
+        musicInfo.metadata.musicInfo.meta.picUrl = pic
+        return pic
+      }
+    }
     const onlineMusicInfo = musicInfo.metadata.musicInfo
     if (onlineMusicInfo.meta.picUrl) return onlineMusicInfo.meta.picUrl
   }

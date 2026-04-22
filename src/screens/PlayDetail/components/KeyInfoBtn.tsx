@@ -95,13 +95,19 @@ type ChordSegment = NonNullable<MusicProfile['chordSegments']>[number]
 
 type SheetMode = 'chord' | 'degree' | 'jianpu'
 
+type SheetBeatCell = {
+  startMs: number
+  chordText: string
+  degreeText: string
+  jianpuText: string
+  lyricText: string
+}
+
 type SheetBlock = {
   id: string
   startMs: number
-  timeText: string
-  chordLine: string
-  degreeLine: string
-  jianpuLine: string
+  label: string
+  beats: SheetBeatCell[]
   lyricLine: string
 }
 
@@ -216,7 +222,11 @@ const splitSimpleChord = (label: string) => {
   const matched = /^([A-G](?:#|b)?)(.*)$/.exec(normalized.trim())
   if (!matched) return { root: normalized, quality: '' }
   const suffix = matched[2] || ''
-  const quality = /^m(?!aj)/i.test(suffix) || /dim|o/i.test(suffix) ? 'm' : ''
+  const quality = /dim|o/i.test(suffix)
+    ? 'dim'
+    : /^m(?!aj)/i.test(suffix)
+      ? 'm'
+      : ''
   return {
     root: flatToChinese(matched[1]),
     quality,
@@ -231,8 +241,17 @@ const transposeSimpleChord = (label: string, semitoneOffset: number) => {
 }
 
 const degreeTextForChord = (label: string, tonicName: string) => {
-  const display = formatChordDisplayLabel(label, tonicName)
-  return display.suffix || display.functionHint || display.title
+  const { root, quality } = splitSimpleChord(label)
+  const normalizedRoot = root.replace(/^b([A-G])$/, (_, note: string) => `${note}b`)
+  const normalizedTonic = tonicName.replace(/^b([A-G])$/, (_, note: string) => `${note}b`)
+  const rootSemi = NOTE_TO_SEMITONE[normalizedRoot] ?? NOTE_TO_SEMITONE[root]
+  const tonicSemi = NOTE_TO_SEMITONE[normalizedTonic] ?? NOTE_TO_SEMITONE[tonicName]
+  if (rootSemi == null || tonicSemi == null) return ''
+  const interval = (rootSemi - tonicSemi + 12) % 12
+  const degree = DEGREE_LABELS[interval]
+  if (quality == 'dim') return `${degree}dim`
+  if (quality == 'm') return `${degree}m`
+  return degree
 }
 
 const intervalToJianpu = (interval: number) => {
@@ -325,6 +344,34 @@ const parseLyricCues = (rawLyric: string): ParsedCueLine[] => {
     }))
 }
 
+const extractLyricTextLines = (rawLyric: string) => {
+  if (!rawLyric.trim()) return []
+  return rawLyric
+    .split(/\r?\n/)
+    .map(line => line
+      .replace(/\[[^\]]*]/g, '')
+      .replace(/\{.*?\}/g, '')
+      .replace(/\\N/gi, '\n')
+      .trim())
+    .flatMap(line => line.split('\n').map(item => item.trim()))
+    .filter(line => line && !/^(调号|拍速|节拍|分析时间|最高音)：/.test(line))
+}
+
+const buildFallbackCueLines = (profile: MusicProfile | null, rawLyric: string) => {
+  const lyricLines = extractLyricTextLines(rawLyric)
+  const durationMs = Math.max(
+    profile?.analyzedDurationMs ?? 0,
+    ...(profile?.chordSegments ?? []).map(segment => segment.endMs),
+  )
+  if (!durationMs || !lyricLines.length) return []
+  return lyricLines.map((text, index) => ({
+    startMs: lyricLines.length <= 1
+      ? 0
+      : Math.round((index / Math.max(1, lyricLines.length - 1)) * durationMs),
+    text,
+  }))
+}
+
 const buildChordLrc = (profile: MusicProfile, rawLyric: string) => {
   const chordSegments = profile.chordSegments ?? []
   if (!chordSegments.length) return ''
@@ -354,52 +401,299 @@ const buildChordLrc = (profile: MusicProfile, rawLyric: string) => {
   return lines.join('\n')
 }
 
-const placeTextAt = (chars: string[], start: number, text: string) => {
-  const next = [...chars]
-  const safeStart = Math.max(0, Math.min(next.length - 1, start))
-  for (let index = 0; index < text.length && safeStart + index < next.length; index += 1) {
-    next[safeStart + index] = text[index]
+type TextPlacement = {
+  start: number
+  text: string
+}
+
+type SheetAnchor = {
+  startMs: number
+  text: string
+  isInstrumental?: boolean
+}
+
+const layoutTextPlacements = (length: number, placements: TextPlacement[]) => {
+  const safeLength = Math.max(1, length)
+  const chars = new Array(safeLength).fill(' ')
+  let nextFreeIndex = 0
+  placements
+    .filter(item => item.text.trim())
+    .sort((left, right) => left.start - right.start || right.text.length - left.text.length)
+    .forEach(item => {
+      const maxStart = Math.max(0, safeLength - item.text.length)
+      const desiredStart = Math.max(0, Math.min(maxStart, item.start))
+      const safeStart = Math.max(desiredStart, Math.min(maxStart, nextFreeIndex))
+      if (safeStart >= safeLength) return
+      for (let index = 0; index < item.text.length && safeStart + index < safeLength; index += 1) {
+        chars[safeStart + index] = item.text[index]
+      }
+      nextFreeIndex = Math.min(safeLength, safeStart + item.text.length + 1)
+    })
+  return chars.join('').replace(/\s+$/g, '')
+}
+
+const getMeterBeatCount = (timeSignature?: MusicProfile['timeSignature']) => {
+  switch (timeSignature) {
+    case '3/4': return 3
+    case '6/8': return 6
+    case '4/4':
+    default:
+      return 4
+  }
+}
+
+const formatInstrumentLabel = (startMs: number, profile: MusicProfile | null) => {
+  const beatIntervalMs = Math.max(1, Math.round(profile?.beatIntervalMs || 600))
+  const firstBeatOffsetMs = Math.max(0, Math.round(profile?.firstBeatOffsetMs || 0))
+  const meterBeatCount = getMeterBeatCount(profile?.timeSignature)
+  const beatsFromStart = Math.max(0, Math.round((startMs - firstBeatOffsetMs) / beatIntervalMs))
+  const barIndex = Math.floor(beatsFromStart / meterBeatCount) + 1
+  const beatIndex = (beatsFromStart % meterBeatCount) + 1
+  return `间奏 第${barIndex}小节 第${beatIndex}拍`
+}
+
+const getProfileDurationMs = (profile: MusicProfile | null) => Math.max(
+  profile?.analyzedDurationMs ?? 0,
+  ...(profile?.chordSegments ?? []).map(segment => segment.endMs),
+)
+
+const buildBeatBoundaries = (profile: MusicProfile | null) => {
+  const durationMs = getProfileDurationMs(profile)
+  if (!profile || !durationMs) return []
+  const beatIntervalMs = Math.max(1, Math.round(profile.beatIntervalMs || 600))
+  const firstBeatOffsetMs = Math.max(0, Math.round(profile.firstBeatOffsetMs || 0))
+  const beatTimes: number[] = []
+  for (let timeMs = Math.min(firstBeatOffsetMs, durationMs); timeMs <= durationMs + beatIntervalMs; timeMs += beatIntervalMs) {
+    beatTimes.push(timeMs)
+  }
+  if (!beatTimes.length || beatTimes[0] > 0) beatTimes.unshift(0)
+  return beatTimes
+}
+
+const findSegmentForRange = (segments: ChordSegment[], startMs: number, endMs: number) => {
+  let bestSegment: ChordSegment | null = null
+  let bestOverlap = 0
+  segments.forEach(segment => {
+    const overlap = Math.min(endMs, segment.endMs) - Math.max(startMs, segment.startMs)
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap
+      bestSegment = segment
+    }
+  })
+  if (bestSegment) return bestSegment
+  return segments
+    .filter(segment => segment.startMs <= startMs)
+    .sort((left, right) => right.startMs - left.startMs)[0] ?? null
+}
+
+const buildBeatJianpuCell = (
+  startMs: number,
+  endMs: number,
+  pitchTrack: NonNullable<MusicProfile['pitchTrack']>,
+  tonicName: string,
+) => {
+  if (!pitchTrack.length) return '--'
+  const tonicSemi = NOTE_TO_SEMITONE[tonicName.replace(/^b([A-G])$/, (_, note: string) => `${note}b`)] ?? NOTE_TO_SEMITONE[tonicName]
+  if (tonicSemi == null) return '--'
+  const centerMs = (startMs + endMs) / 2
+  const nearest = pitchTrack.reduce((prev, frame) => {
+    if (!prev) return frame
+    return Math.abs(frame.timeMs - centerMs) < Math.abs(prev.timeMs - centerMs) ? frame : prev
+  }, null as NonNullable<MusicProfile['pitchTrack']>[number] | null)
+  if (!nearest) return '--'
+  return intervalToJianpu(Math.round(nearest.midi) - tonicSemi)
+}
+
+const simplifyBeatCells = (cells: SheetBeatCell[]) => {
+  if (cells.length <= 2) return cells
+  const next = cells.map(cell => ({ ...cell }))
+  const groupChord = (target: SheetBeatCell[]) => {
+    const groups: Array<{ start: number, end: number, chord: string }> = []
+    let start = 0
+    while (start < target.length) {
+      let end = start + 1
+      while (end < target.length && target[end].chordText == target[start].chordText) end += 1
+      groups.push({ start, end, chord: target[start].chordText })
+      start = end
+    }
+    return groups
+  }
+
+  let groups = groupChord(next)
+  while (groups.length > 3) {
+    const bridgeGroup = groups.find((group, index) => index > 0 && index < groups.length - 1 && group.end - group.start == 1)
+    if (!bridgeGroup) break
+    const groupIndex = groups.indexOf(bridgeGroup)
+    const prev = groups[groupIndex - 1]
+    const currentCell = next[bridgeGroup.start]
+    const leftDistance = Math.abs((NOTE_TO_SEMITONE[getChordRoot(prev.chord)] ?? 0) - (NOTE_TO_SEMITONE[getChordRoot(currentCell.chordText)] ?? 0))
+    const right = groups[groupIndex + 1]
+    const rightDistance = Math.abs((NOTE_TO_SEMITONE[getChordRoot(right.chord)] ?? 0) - (NOTE_TO_SEMITONE[getChordRoot(currentCell.chordText)] ?? 0))
+    const replacement = leftDistance <= rightDistance ? next[prev.start] : next[right.start]
+    next[bridgeGroup.start] = {
+      ...next[bridgeGroup.start],
+      chordText: replacement.chordText,
+      degreeText: replacement.degreeText,
+    }
+    groups = groupChord(next)
   }
   return next
 }
 
-const buildSheetBlocks = (profile: MusicProfile | null, cues: ParsedCueLine[], capoSemitone: number): SheetBlock[] => {
-  if (!profile?.chordSegments?.length || !cues.length) return []
+const buildBeatLyricFragments = (text: string, beatCount: number) => {
+  const normalized = text.trim()
+  if (!normalized) return Array.from({ length: beatCount }, () => '')
+  if (normalized.startsWith('间奏')) {
+    return [normalized, ...Array.from({ length: Math.max(0, beatCount - 1) }, () => '')]
+  }
+  const words = normalized.split(/\s+/).filter(Boolean)
+  if (words.length > 1) {
+    const fragments = Array.from({ length: beatCount }, () => '')
+    words.forEach((word, index) => {
+      const targetIndex = Math.min(beatCount - 1, Math.floor(index / Math.max(1, words.length) * beatCount))
+      fragments[targetIndex] = fragments[targetIndex] ? `${fragments[targetIndex]} ${word}` : word
+    })
+    return fragments
+  }
+  const chars = Array.from(normalized)
+  const fragments = Array.from({ length: beatCount }, () => '')
+  chars.forEach((char, index) => {
+    const targetIndex = Math.min(beatCount - 1, Math.floor(index / Math.max(1, chars.length) * beatCount))
+    fragments[targetIndex] += char
+  })
+  return fragments
+}
+
+const buildJianpuMeasureText = (block: SheetBlock) => {
+  const notes = block.beats.map(beat => beat.jianpuText || '-')
+  return `${block.label} | ${notes.join('  ')} |`
+}
+
+const buildJianpuLyricText = (block: SheetBlock) => {
+  const lyrics = block.beats.map(beat => beat.lyricText || ' ')
+  return `   | ${lyrics.join('  ')} |`
+}
+
+const buildCompactBarLabel = (barIndex: number, beatCount: number) => `${String(barIndex).padStart(2, '0')}|${Array.from({ length: beatCount }, (_, index) => index + 1).join('')}`
+
+const buildBarAnchors = (profile: MusicProfile | null): SheetAnchor[] => {
+  if (!profile) return []
+  const beatIntervalMs = Math.max(1, Math.round(profile.beatIntervalMs || 600))
+  const meterBeatCount = getMeterBeatCount(profile.timeSignature)
+  const barIntervalMs = Math.max(beatIntervalMs, beatIntervalMs * meterBeatCount)
+  const firstBeatOffsetMs = Math.max(0, Math.round(profile.firstBeatOffsetMs || 0))
+  const durationMs = Math.max(
+    profile.analyzedDurationMs || 0,
+    ...(profile.chordSegments ?? []).map(segment => segment.endMs),
+  )
+  if (!durationMs) return []
+  const anchors: SheetAnchor[] = []
+  for (let startMs = Math.min(firstBeatOffsetMs, durationMs); startMs < durationMs; startMs += barIntervalMs) {
+    anchors.push({
+      startMs,
+      text: formatInstrumentLabel(startMs, profile),
+      isInstrumental: true,
+    })
+  }
+  if (!anchors.length || anchors[0].startMs > 0) {
+    anchors.unshift({
+      startMs: 0,
+      text: formatInstrumentLabel(0, profile),
+      isInstrumental: true,
+    })
+  }
+  return anchors
+}
+
+const buildSheetAnchors = (profile: MusicProfile | null, cues: ParsedCueLine[], rawLyric: string) => {
+  const durationMs = Math.max(
+    profile?.analyzedDurationMs ?? 0,
+    ...(profile?.chordSegments ?? []).map(segment => segment.endMs),
+  )
+  if (!durationMs) return []
+  const lyricAnchors = (cues.length >= 2 ? cues : buildFallbackCueLines(profile, rawLyric))
+    .map(cue => ({
+      startMs: cue.startMs,
+      text: cue.text,
+      isInstrumental: false,
+    }))
+  const allAnchors = [...buildBarAnchors(profile)]
+  const beatIntervalMs = Math.max(1, Math.round(profile?.beatIntervalMs || 600))
+  const fillerStepMs = beatIntervalMs * getMeterBeatCount(profile?.timeSignature)
+  lyricAnchors.forEach(anchor => {
+    const existingIndex = allAnchors.findIndex(item => Math.abs(item.startMs - anchor.startMs) <= Math.max(120, beatIntervalMs / 2))
+    if (existingIndex >= 0) allAnchors[existingIndex] = anchor
+    else allAnchors.push(anchor)
+  })
+
+  const deduped = allAnchors
+    .sort((left, right) => left.startMs - right.startMs)
+    .filter((anchor, index, list) => {
+      if (index == 0) return true
+      const prev = list[index - 1]
+      return Math.abs(prev.startMs - anchor.startMs) > Math.max(120, fillerStepMs / 3) || prev.text != anchor.text
+    })
+    .filter(anchor => anchor.startMs <= durationMs)
+  return deduped
+}
+
+const buildSheetBlocks = (profile: MusicProfile | null, cues: ParsedCueLine[], rawLyric: string, capoSemitone: number): SheetBlock[] => {
+  if (!profile?.chordSegments?.length) return []
+  const beatTimes = buildBeatBoundaries(profile)
+  if (beatTimes.length < 2) return []
   const tonicName = getMajorSystemTonicName(profile)
   const pitchTrack = profile.pitchTrack ?? []
-  return cues.map((cue, index) => {
-    const nextCue = cues[index + 1]
-    const blockStart = cue.startMs
-    const maxSegmentEnd = profile.chordSegments!.reduce((maxValue, segment) => {
-      return segment.endMs > blockStart && segment.endMs > maxValue ? segment.endMs : maxValue
-    }, blockStart + 4_000)
-    const blockEnd = nextCue?.startMs && nextCue.startMs > blockStart ? nextCue.startMs : maxSegmentEnd
-    const relatedSegments = profile.chordSegments!.filter(segment => segment.endMs > blockStart && segment.startMs < blockEnd)
-    if (!relatedSegments.length) return null
-    const lyricLine = Array.from(cue.text).join(' ')
-    const chordLength = Math.max(24, lyricLine.length + 8)
-    let chordChars = new Array(chordLength).fill(' ')
-    let degreeChars = new Array(chordLength).fill(' ')
-    relatedSegments.forEach(segment => {
-      const segmentCenter = (segment.startMs + segment.endMs) / 2
-      const ratio = Math.max(0, Math.min(1, (segmentCenter - blockStart) / Math.max(1, blockEnd - blockStart)))
-      const chordText = transposeSimpleChord(segment.label, -capoSemitone)
-      const degreeText = degreeTextForChord(segment.label, tonicName)
-      const start = Math.round(ratio * Math.max(0, chordLength - chordText.length))
-      chordChars = placeTextAt(chordChars, start, chordText)
-      degreeChars = placeTextAt(degreeChars, start, degreeText)
-    })
-    const jianpuLine = buildJianpuLine(cue.text, blockStart, blockEnd, pitchTrack, tonicName)
-    return {
-      id: `${blockStart}_${cue.text}`,
-      startMs: blockStart,
-      timeText: formatTime(blockStart),
-      chordLine: chordChars.join('').replace(/\s+$/g, ''),
-      degreeLine: degreeChars.join('').replace(/\s+$/g, ''),
-      jianpuLine,
-      lyricLine,
+  const meterBeatCount = getMeterBeatCount(profile.timeSignature)
+  const lyricAnchors = buildSheetAnchors(profile, cues, rawLyric)
+  const blocks: SheetBlock[] = []
+  for (let beatIndex = 0, barIndex = 1; beatIndex < beatTimes.length - 1; beatIndex += meterBeatCount, barIndex += 1) {
+    const beats: SheetBeatCell[] = []
+    const blockStart = beatTimes[beatIndex]
+    const blockEnd = beatTimes[Math.min(beatTimes.length - 1, beatIndex + meterBeatCount)]
+    for (let offset = 0; offset < meterBeatCount && beatIndex + offset < beatTimes.length - 1; offset += 1) {
+      const startMs = beatTimes[beatIndex + offset]
+      const endMs = beatTimes[beatIndex + offset + 1]
+      const segment = findSegmentForRange(profile.chordSegments!, startMs, endMs)
+      const chordText = segment ? transposeSimpleChord(segment.label, -capoSemitone) : '--'
+      const degreeText = segment ? degreeTextForChord(segment.label, tonicName) || '--' : '--'
+      const jianpuText = buildBeatJianpuCell(startMs, endMs, pitchTrack, tonicName)
+      beats.push({
+        startMs,
+        chordText,
+        degreeText,
+        jianpuText,
+        lyricText: '',
+      })
     }
-  }).filter(Boolean) as SheetBlock[]
+    if (!beats.length) continue
+    const simplifiedBeats = simplifyBeatCells(beats)
+    const lyricLine = lyricAnchors
+      .filter(anchor => !anchor.isInstrumental && anchor.startMs >= blockStart && anchor.startMs < blockEnd)
+      .map(anchor => anchor.text.trim())
+      .filter(Boolean)
+      .join(' / ')
+      || lyricAnchors
+        .filter(anchor => anchor.isInstrumental && anchor.startMs >= blockStart && anchor.startMs < blockEnd)
+        .map(anchor => anchor.text.trim())
+        .filter(Boolean)[0]
+      || ''
+    const lyricFragments = buildBeatLyricFragments(lyricLine, simplifiedBeats.length)
+    blocks.push({
+      id: `${blockStart}_${barIndex}`,
+      startMs: blockStart,
+      label: buildCompactBarLabel(barIndex, beats.length),
+      beats: simplifiedBeats.map((beat, index) => ({
+        ...beat,
+        lyricText: lyricFragments[index] || '',
+      })),
+      lyricLine,
+    })
+  }
+  return blocks.map(block => {
+    return {
+      ...block,
+    }
+  })
 }
 
 const deriveAnalyzePhaseText = (scope: 'quick' | 'full', progress: number) => {
@@ -500,7 +794,7 @@ export default memo(({ direction }: {
   const latestProfilePathRef = useRef(profilePath)
   const rawLyric = playerState.musicInfo.rawlrc || playerState.musicInfo.lrc || ''
   const lyricCues = useMemo(() => parseLyricCues(rawLyric), [rawLyric])
-  const sheetBlocks = useMemo(() => buildSheetBlocks(profile, lyricCues, capoSemitone), [profile, lyricCues, capoSemitone])
+  const sheetBlocks = useMemo(() => buildSheetBlocks(profile, lyricCues, rawLyric, capoSemitone), [profile, lyricCues, rawLyric, capoSemitone])
   const waveMarkers = useMemo(() => buildWaveMarkers(profile, lyricCues), [profile, lyricCues])
 
   useEffect(() => {
@@ -577,7 +871,7 @@ export default memo(({ direction }: {
     return `${Math.max(0, Math.min(1, ratio)) * 100}%`
   }
   const getMarkerLeft = (timeMs: number) => `${Math.max(0, Math.min(1, timeMs / Math.max(1, profile?.analyzedDurationMs || timeMs || 1))) * 100}%`
-  const activeSheetTitle = sheetMode == 'chord' ? '和弦' : sheetMode == 'degree' ? '级数' : '简谱'
+const activeSheetTitle = sheetMode == 'chord' ? '和弦' : sheetMode == 'degree' ? '级数' : '简谱'
 
   const ensureAnalyzePath = async() => {
     if (localProfilePath) return localProfilePath
@@ -1036,19 +1330,46 @@ export default memo(({ direction }: {
               </View>
               {sheetBlocks.length ? (
                 <View style={styles.sheetList}>
-                  {sheetBlocks.map(block => (
-                    <TouchableOpacity key={block.id} activeOpacity={0.85} style={styles.sheetCard} onPress={() => { jumpToTime(block.startMs) }}>
-                      <Text style={styles.sheetTime} color="#66717d" size={11}>{block.timeText}</Text>
-                      <Text style={styles.sheetChordText} color="#182838">
-                        {sheetMode == 'chord'
-                          ? (block.chordLine || '--')
-                          : sheetMode == 'degree'
-                            ? (block.degreeLine || '--')
-                            : (block.jianpuLine || '--')}
-                      </Text>
-                      <Text style={styles.sheetLyricText} color="#2d3947">{block.lyricLine}</Text>
-                    </TouchableOpacity>
-                  ))}
+                  {sheetMode == 'jianpu' ? (
+                    <View style={styles.jianpuList}>
+                      {sheetBlocks.map(block => (
+                        <TouchableOpacity key={block.id} activeOpacity={0.85} style={styles.jianpuCard} onPress={() => { jumpToTime(block.startMs) }}>
+                          <Text style={styles.jianpuLine} color="#1f2f3d">{buildJianpuMeasureText(block)}</Text>
+                          <Text style={styles.jianpuLyricLine} color="#5a6470">{buildJianpuLyricText(block)}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ) : (
+                    <>
+                      <View style={styles.sheetHeaderRow}>
+                        <Text style={styles.sheetBarHeader} color="#6b5328">节</Text>
+                        <View style={styles.sheetBeatGrid}>
+                          {Array.from({ length: getMeterBeatCount(profile?.timeSignature) }, (_, index) => (
+                            <View key={`header_${index}`} style={styles.sheetHeaderCell}>
+                              <Text style={styles.sheetHeaderText} color="#6b5328">{index + 1}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                      {sheetBlocks.map(block => (
+                        <TouchableOpacity key={block.id} activeOpacity={0.85} style={styles.sheetCard} onPress={() => { jumpToTime(block.startMs) }}>
+                          <View style={styles.sheetGridRow}>
+                            <Text style={styles.sheetBarLabel} color="#6b5328">{block.label.split('|')[0]}</Text>
+                            <View style={styles.sheetBeatGrid}>
+                              {block.beats.map((beat, index) => (
+                                <View key={`${block.id}_${index}`} style={styles.sheetBeatCell}>
+                                  <Text style={styles.sheetBeatText} color="#182838">
+                                    {sheetMode == 'chord' ? beat.chordText : beat.degreeText}
+                                  </Text>
+                                  {beat.lyricText ? <Text style={styles.sheetCellLyric} color="#5d6670" numberOfLines={2}>{beat.lyricText}</Text> : null}
+                                </View>
+                              ))}
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </>
+                  )}
                 </View>
               ) : (
                 <Text color={theme['c-font-label']}>当前没有可展示的歌词对齐和弦。</Text>
@@ -1119,7 +1440,9 @@ const styles = createStyle({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: '#274863',
+    borderWidth: 1,
+    borderColor: '#183044',
   },
   actionGroup: {
     flexDirection: 'row',
@@ -1234,26 +1557,105 @@ const styles = createStyle({
     paddingTop: 14,
     paddingBottom: 18,
   },
+  sheetHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sheetBarHeader: {
+    width: 42,
+    textAlign: 'center',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   sheetCard: {
-    borderRadius: 14,
+    borderRadius: 12,
     backgroundColor: '#f8f1e3',
     borderWidth: 1,
     borderColor: '#decda8',
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  jianpuList: {
+    gap: 10,
+    paddingTop: 14,
+    paddingBottom: 18,
+  },
+  jianpuCard: {
+    borderRadius: 12,
+    backgroundColor: '#fffaf0',
+    borderWidth: 1,
+    borderColor: '#d8c59c',
+    paddingHorizontal: 10,
     paddingVertical: 10,
   },
-  sheetTime: {
-    marginBottom: 6,
-  },
-  sheetChordText: {
+  jianpuLine: {
     fontFamily: 'monospace',
     fontSize: 14,
     lineHeight: 22,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  sheetLyricText: {
+  jianpuLyricLine: {
+    marginTop: 4,
+    fontFamily: 'monospace',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  sheetGridRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 8,
+  },
+  sheetBarLabel: {
+    width: 42,
     fontFamily: 'monospace',
     fontSize: 14,
-    lineHeight: 22,
+    lineHeight: 52,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  sheetBeatGrid: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 6,
+  },
+  sheetHeaderCell: {
+    flex: 1,
+    minHeight: 24,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d4c095',
+    backgroundColor: '#f3e7c8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetHeaderText: {
+    fontFamily: 'monospace',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  sheetBeatCell: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d4c095',
+    backgroundColor: '#fff8ec',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  sheetBeatText: {
+    fontFamily: 'monospace',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  sheetCellLyric: {
+    marginTop: 3,
+    fontSize: 10,
+    lineHeight: 12,
+    textAlign: 'center',
   },
 })

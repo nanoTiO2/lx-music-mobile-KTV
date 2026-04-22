@@ -97,7 +97,7 @@ const delayRetry = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, i
 }
 const getMusicPlayUrl = async(musicInfo: LX.Music.MusicInfo | LX.Download.ListItem, isRefresh = false, isRetryed = false): Promise<string | null> => {
   // this.musicInfo.url = await getMusicPlayUrl(targetSong, type)
-  setStatusText(global.i18n.t('player__getting_url'))
+  if (playerState.isPlay) setStatusText(global.i18n.t('player__getting_url'))
   addLoadTimeout()
 
   // const type = getPlayType(settingState.setting['player.isPlayHighQuality'], musicInfo)
@@ -175,6 +175,7 @@ export const setMusicUrl = (musicInfo: LX.Music.MusicInfo | LX.Download.ListItem
     if (musicInfo === playerState.playMusicInfo.musicInfo) {
       global.lx.gettingUrlId = ''
       clearLoadTimeout()
+      if (!playerState.isPlay && playerState.statusText == global.i18n.t('player__getting_url')) setStatusText('')
     }
   })
 }
@@ -193,12 +194,14 @@ const handleRestorePlay = async(restorePlayInfo: LX.Player.SavedPlayInfo) => {
   void initTrackInfo(musicInfo, playerState.musicInfo)
 
   void getPicPath({ musicInfo, listId: playMusicInfo.listId }).then((url: string) => {
+    const nextUrl = url || ('progress' in musicInfo ? musicInfo.metadata.musicInfo.meta.picUrl : musicInfo.meta.picUrl) || ''
     if (
       musicInfo.id != playMusicInfo.musicInfo?.id ||
-      playerState.musicInfo.pic == url ||
-      playerState.loadErrorPicUrl == url
+      !nextUrl ||
+      playerState.musicInfo.pic == nextUrl ||
+      playerState.loadErrorPicUrl == nextUrl
     ) return
-    setMusicInfo({ pic: url })
+    setMusicInfo({ pic: nextUrl })
     global.app_event.picUpdated()
   })
 
@@ -226,11 +229,13 @@ const debouncePlay = debounceBackgroundTimer((musicInfo: LX.Player.PlayMusic) =>
   setMusicUrl(musicInfo)
 
   void getPicPath({ musicInfo, listId: playerState.playMusicInfo.listId }).then((url: string) => {
+    const nextUrl = url || ('progress' in musicInfo ? musicInfo.metadata.musicInfo.meta.picUrl : musicInfo.meta.picUrl) || ''
     if (
       musicInfo.id != playerState.playMusicInfo.musicInfo?.id ||
-      playerState.musicInfo.pic == url ||
-      playerState.loadErrorPicUrl == url) return
-    setMusicInfo({ pic: url })
+      !nextUrl ||
+      playerState.musicInfo.pic == nextUrl ||
+      playerState.loadErrorPicUrl == nextUrl) return
+    setMusicInfo({ pic: nextUrl })
     global.app_event.picUpdated()
   })
 

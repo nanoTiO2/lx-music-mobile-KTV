@@ -5,6 +5,7 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
+import android.graphics.drawable.GradientDrawable;
 import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -25,8 +26,6 @@ import com.facebook.react.bridge.WritableMap;
 import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import cn.toside.music.mobile.R;
 
 public class LyricView extends Activity implements View.OnTouchListener {
   LyricSwitchView textView = null;
@@ -60,6 +59,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
   private String textX = "LEFT";
   private String textY = "TOP";
   private float alpha = 1f;
+  private float backgroundAlpha = 0.32f;
   private float textSize = 18f;
   private int maxWidth = 0;
   private int maxHeight = 0;
@@ -139,10 +139,31 @@ public class LyricView extends Activity implements View.OnTouchListener {
 
   private void setLayoutParamsHeight() {
     if (textView == null) return;
-    int height = textView.getPaint().getFontMetricsInt(null) * maxLineNum;
+    int lineCount = isSingleLine ? 1 : Math.max(1, maxLineNum);
+    android.graphics.Paint.FontMetricsInt metrics = textView.getPaint().getFontMetricsInt();
+    int lineHeight = Math.max(1, metrics.bottom - metrics.top);
+    int height = lineHeight * lineCount + Math.round(textSize * 1.45f);
     if (height > maxHeight - 100) height = maxHeight - 100;
     layoutParams.height = height;
     textView.setHeight(height);
+  }
+
+  private int dp(int value) {
+    return Math.round(value * reactContext.getResources().getDisplayMetrics().density);
+  }
+
+  private void applyViewBackground() {
+    if (textView == null) return;
+    if (isLock) {
+      textView.setBackgroundColor(Color.TRANSPARENT);
+      return;
+    }
+    GradientDrawable drawable = new GradientDrawable();
+    drawable.setShape(GradientDrawable.RECTANGLE);
+    drawable.setCornerRadius(dp(16));
+    drawable.setColor(Color.argb(Math.max(0, Math.min(255, Math.round(backgroundAlpha * 255f))), 16, 22, 32));
+    drawable.setStroke(dp(1), Color.argb(58, 255, 255, 255));
+    textView.setBackground(drawable);
   }
 
   private void fixViewPosition() {
@@ -217,6 +238,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     textX = options.getString("textX", textX);
     textY = options.getString("textY", textY);
     alpha = (float) options.getDouble("alpha", alpha);
+    backgroundAlpha = (float) options.getDouble("backgroundAlpha", backgroundAlpha);
     textSize = (float) options.getDouble("textSize", textSize);
     widthPercentage = (float) options.getDouble("width", 100) / 100f;
     maxLineNum = (int) options.getDouble("maxLineNum", maxLineNum);
@@ -254,7 +276,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
 
     textView.setTextColor(parseColor(playedColor));
     textView.setShadowColor(parseColor(shadowColor));
-    textView.setAlpha(alpha);
+    textView.setTextAlpha(alpha);
     textView.setTextSize(textSize);
     // Log.d("Lyric", "alpha: " + alpha + " text size: " + textSize);
 
@@ -292,6 +314,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (!isSingleLine) {
       textView.setMaxLines(maxLineNum);
     }
+    applyViewBackground();
   }
   private void handleShowLyric() {
     if (windowManager == null) {
@@ -325,14 +348,14 @@ public class LyricView extends Activity implements View.OnTouchListener {
     //  : WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
     layoutParams.flags = getLayoutParamsFlags();
     if (isLock) {
-      textView.setBackgroundColor(Color.TRANSPARENT);
+      applyViewBackground();
 
       // 修复 Android 12 的穿透点击问题
       if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
         layoutParams.alpha = 0.8f;
       }
     } else {
-      textView.setBackgroundResource(R.drawable.rounded_corner);
+      applyViewBackground();
 
       if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
         layoutParams.alpha = 1.0f;
@@ -496,7 +519,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
       layoutParams.alpha = 0.8f;
     }
-    textView.setBackgroundColor(Color.TRANSPARENT);
+    applyViewBackground();
     windowManager.updateViewLayout(textView, layoutParams);
   }
 
@@ -508,7 +531,7 @@ public class LyricView extends Activity implements View.OnTouchListener {
     if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
       layoutParams.alpha = 1.0f;
     }
-    textView.setBackgroundResource(R.drawable.rounded_corner);
+    applyViewBackground();
     windowManager.updateViewLayout(textView, layoutParams);
   }
 
@@ -560,16 +583,29 @@ public class LyricView extends Activity implements View.OnTouchListener {
   public void setAlpha(float alpha) {
     this.alpha = alpha;
     if (textView == null) return;
-    textView.setAlpha(alpha);
+    textView.setTextAlpha(alpha);
+  }
+
+  public void setBackgroundAlpha(float backgroundAlpha) {
+    this.backgroundAlpha = backgroundAlpha;
+    if (textView == null) return;
+    applyViewBackground();
   }
 
   public void setSingleLine(boolean isSingleLine) {
     this.isSingleLine = isSingleLine;
-    if (textView == null) return;
+    if (textView == null || windowManager == null || layoutParams == null) return;
     windowManager.removeView(textView);
     createTextView();
     textView.setWidth(layoutParams.width);
-    textView.setHeight(layoutParams.height);
+    if (isSingleLine) {
+      textView.setSingleLine(true);
+      textView.setMaxLines(1);
+    } else {
+      textView.setSingleLine(false);
+      textView.setMaxLines(maxLineNum);
+    }
+    setLayoutParamsHeight();
     windowManager.addView(textView, layoutParams);
 
     if (isLock) lockView();
@@ -582,6 +618,14 @@ public class LyricView extends Activity implements View.OnTouchListener {
     isShowToggleAnima = showToggleAnima;
     if (textView == null) return;
     textView.setShowAnima(showToggleAnima);
+  }
+
+  public boolean isSingleLineMode() {
+    return isSingleLine;
+  }
+
+  public int getVisibleLineCount() {
+    return isSingleLine ? 1 : Math.max(1, maxLineNum);
   }
 
   public void setTextSize(float size) {

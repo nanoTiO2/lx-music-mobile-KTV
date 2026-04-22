@@ -54,6 +54,7 @@ export const showDesktopLyricView = async({
   playedColor,
   shadowColor,
   opacity,
+  backgroundOpacity,
   textSize,
   positionX,
   positionY,
@@ -69,6 +70,7 @@ export const showDesktopLyricView = async({
   playedColor: string
   shadowColor: string
   opacity: number
+  backgroundOpacity: number
   textSize: number
   positionX: number
   positionY: number
@@ -83,6 +85,7 @@ export const showDesktopLyricView = async({
     playedColor,
     shadowColor,
     alpha: getAlpha(opacity),
+    backgroundAlpha: getAlpha(backgroundOpacity),
     textSize: getTextSize(textSize),
     lyricViewX: positionX,
     lyricViewY: positionY,
@@ -173,6 +176,10 @@ export const setAlpha = async(alpha: number): Promise<void> => {
   return LyricModule.setAlpha(getAlpha(alpha))
 }
 
+export const setBackgroundAlpha = async(alpha: number): Promise<void> => {
+  return LyricModule.setBackgroundAlpha(getAlpha(alpha))
+}
+
 /**
  * set text size
  * @param size text size
@@ -240,4 +247,3 @@ export const onLyricLinePlay = (handler: (lineInfo: { text: string, extendedLyri
     eventListener.remove()
   }
 }
-

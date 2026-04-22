@@ -67,6 +67,10 @@ public class LyricModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void showDesktopLyric(ReadableMap data, Promise promise) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(reactContext)) {
+      promise.reject("overlay_permission_denied", "Overlay permission denied");
+      return;
+    }
     if (lyric == null) lyric = new Lyric(reactContext, isShowTranslation, isShowRoma, playbackRate);
     lyric.showDesktopLyric(Arguments.toBundle(data), promise);
   }
@@ -153,6 +157,12 @@ public class LyricModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
+  public void setBackgroundAlpha(float alpha, Promise promise) {
+    if (lyric != null) lyric.setBackgroundAlpha(alpha);
+    promise.resolve(null);
+  }
+
+  @ReactMethod
   public void setTextSize(float size, Promise promise) {
     if (lyric != null) lyric.setTextSize(size);
     promise.resolve(null);
@@ -191,7 +201,8 @@ public class LyricModule extends ReactContextBaseJavaModule {
   @ReactMethod
   public void checkOverlayPermission(Promise promise) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(reactContext)) {
-      promise.reject(new Exception("Permission denied"));
+      promise.reject("overlay_permission_denied", "Permission denied");
+      return;
     }
     promise.resolve(null);
   }
@@ -200,7 +211,8 @@ public class LyricModule extends ReactContextBaseJavaModule {
   public void openOverlayPermissionActivity(Promise promise) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(reactContext)) {
       Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + reactContext.getApplicationContext().getPackageName()));
-      reactContext.startActivityForResult(intent, 1, null);
+      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+      reactContext.startActivity(intent);
     }
     promise.resolve(null);
   }

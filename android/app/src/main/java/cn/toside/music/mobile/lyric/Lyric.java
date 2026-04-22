@@ -130,7 +130,7 @@ public class Lyric extends LyricPlayer {
 
   private void setCurrentLyric(String lyric, ArrayList<String> extendedLyrics) {
     if (isShowLyricView && !isScreenOff && lyricView != null) {
-      lyricView.setLyric(lyric, extendedLyrics);
+      lyricView.setLyric(buildDesktopDisplayLyric(lastLine, lyric, extendedLyrics), new ArrayList<>(0));
     }
     if (isSendLyricTextEvent) {
       WritableMap params = Arguments.createMap();
@@ -138,6 +138,36 @@ public class Lyric extends LyricPlayer {
       params.putArray("extendedLyrics", Arguments.makeNativeArray(extendedLyrics));
       lyricEvent.sendEvent(lyricEvent.LYRIC_Line_PLAY, params);
     }
+  }
+
+  private String getLineText(int lineNum) {
+    if (lineNum < 0 || lineNum >= lines.size()) return "";
+    HashMap line = (HashMap) lines.get(lineNum);
+    if (line == null) return "";
+    Object text = line.get("text");
+    return text == null ? "" : text.toString().trim();
+  }
+
+  private String buildDesktopDisplayLyric(int lineNum, String lyric, ArrayList<String> extendedLyrics) {
+    if (lyricView == null || lyricView.isSingleLineMode()) return lyric;
+    int visibleLineCount = Math.max(1, lyricView.getVisibleLineCount());
+    int beforeCount = Math.max(1, visibleLineCount / 2);
+    int afterCount = Math.max(0, visibleLineCount - beforeCount - 1);
+    ArrayList<String> displayLines = new ArrayList<>(visibleLineCount + 2);
+    for (int index = beforeCount; index >= 1; index--) {
+      String prevText = getLineText(lineNum - index);
+      displayLines.add(prevText);
+    }
+    displayLines.add(lyric == null ? "" : lyric);
+    for (int index = 1; index <= afterCount; index++) {
+      String nextText = getLineText(lineNum + index);
+      displayLines.add(nextText);
+    }
+    if (displayLines.isEmpty()) {
+      if (extendedLyrics != null) displayLines.addAll(extendedLyrics);
+      else displayLines.add("");
+    }
+    return String.join("\n", displayLines);
   }
   private void handleGetCurrentLyric(int lineNum) {
     lastLine = lineNum;
@@ -163,7 +193,10 @@ public class Lyric extends LyricPlayer {
   }
 
   public void showDesktopLyric(Bundle options, Promise promise) {
-    if (isShowLyricView) return;
+    if (isShowLyricView) {
+      promise.resolve(null);
+      return;
+    }
     if (lyricEvent == null) lyricEvent = new LyricEvent(reactAppContext);
     isShowLyricView = true;
     if (lyricView == null) lyricView = new LyricView(reactAppContext, lyricEvent);
@@ -273,6 +306,11 @@ public class Lyric extends LyricPlayer {
   public void setAlpha(float alpha) {
     if (lyricView == null) return;
     lyricView.setAlpha(alpha);
+  }
+
+  public void setBackgroundAlpha(float alpha) {
+    if (lyricView == null) return;
+    lyricView.setBackgroundAlpha(alpha);
   }
 
   public void setTextSize(float size) {
